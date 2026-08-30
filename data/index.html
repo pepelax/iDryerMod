@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Filament Dryer</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <main class="shell">
+    <header><div><span class="eyebrow">FILAMENT DRYER</span><h1>Панель сушилки</h1></div><span id="connection" class="badge">offline</span></header>
+    <section class="grid cards">
+      <article><span>Воздух</span><strong id="airTemp">—</strong><small id="airRh">—</small></article>
+      <article><span>Нагреватель</span><strong id="heaterTemp">—</strong><small id="heaterPower">—</small></article>
+      <article><span>Катушка 1</span><strong id="weight1">—</strong><small>грамм</small></article>
+      <article><span>Катушка 2</span><strong id="weight2">—</strong><small>грамм</small></article>
+      <article><span>Всего</span><strong id="weightTotal">—</strong><small>грамм</small></article>
+      <article><span>Режим</span><strong id="mode">—</strong><small id="phase">—</small></article>
+    </section>
+    <section class="panel">
+      <h2>Запуск сушки</h2>
+      <div class="form">
+        <label>Режим<select id="runMode"><option value="timed_preset">Пресет</option><option value="timed_manual">Ручной</option><option value="continuous">Постоянный</option></select></label>
+        <label>Температура, °C<input id="targetTemp" type="number" value="45" min="20" max="75"></label>
+        <label>Влажность, %<input id="targetRh" type="number" value="20" min="1" max="90"></label>
+        <label>Время, ч<input id="duration" type="number" value="6" min="0" max="72"></label>
+      </div>
+      <div class="actions"><button class="primary" id="start">Запустить</button><button id="pause">Пауза</button><button class="danger" id="stop">Стоп</button></div>
+    </section>
+    <section class="panel"><h2>История</h2><canvas id="chart" height="160"></canvas><pre id="events">Загрузка…</pre></section>
+    <footer>mDNS: filament-dryer.local · OTA доступно через ArduinoOTA</footer>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

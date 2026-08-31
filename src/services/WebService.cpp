@@ -162,6 +162,9 @@ void WebService::update() { server_.handleClient(); }
 void WebService::sendState() {
   StaticJsonDocument<1536> doc;
   doc["version"] = APP_VERSION;
+  // Device uptime: the web chart aligns live samples with the telemetry
+  // history, whose records are also stamped with millis().
+  doc["uptimeMs"] = millis();
   doc["mode"] = modeName(state_.mode);
   doc["phase"] = phaseName(state_.phase);
   doc["fault"] = faultName(state_.fault);

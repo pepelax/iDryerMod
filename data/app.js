@@ -2,11 +2,13 @@ const $=id=>document.getElementById(id);
 const phaseNames={idle:'Готов',precheck:'Проверка',warmup:'Прогрев',drying:'Сушка',paused:'Пауза',finish:'Завершение',cooldown:'Охлаждение',fault:'Авария'};
 const faultNames={none:'',ntc_invalid:'Датчик NTC',heater_overtemperature:'Перегрев нагревателя',air_sensor_invalid:'Датчик воздуха',weight1_invalid:'Датчик веса 1',weight2_invalid:'Датчик веса 2',warmup_timeout:'Таймаут прогрева',configuration_invalid:'Конфигурация',watchdog_reset:'Watchdog'};
 const modeNames={idle:'—',timed_preset:'Пресет',timed_manual:'Ручной',continuous:'Постоянный',cooldown:'Охлаждение',calibration:'Калибровка',fault:'Авария'};
-let points=[],presets=[],calBusy=false;
+let hist=[],live=[],uptimeMs=0,rangeSec=14400,hoverX=null,pinned=false,pinTs=null,geom=null,presets=[],calBusy=false;
 
 async function request(url,options={}){const r=await fetch(url,options);if(!r.ok)throw new Error(r.status);return r.json()}
 
 function fmtTime(sec){if(sec==null||sec<0)return '—';sec=Math.floor(sec);const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60;return (h?h+':':'')+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')}
+
+function fmtAgo(sec){if(sec==null||sec<0)return '—';sec=Math.floor(sec);if(sec<5)return 'сейчас';if(sec<60)return sec+' с назад';if(sec<3600){const m=Math.floor(sec/60),s=sec%60;return m+' мин'+(s?' '+s+' с':'')+' назад'}const h=Math.floor(sec/3600),m=Math.round(sec%3600/60);return h+' ч'+(m?' '+m+' мин':'')+' назад'}
 
 function render(s){
   $('connection').textContent=s.wifiConnected?'online':'offline';
@@ -34,20 +36,115 @@ function render(s){
   $('netStatus').textContent=s.apActive
     ?'Режим настройки: точка доступа FilamentDryer-Setup, веб-панель по адресу '+(s.ip||'192.168.4.1')+'. Задайте домашнюю сеть ниже.'
     :(s.wifiConnected?'Wi-Fi подключён · адрес: '+((s.hostname||'dryer')+'.local')+(s.ip?' ('+s.ip+')':''):'Wi-Fi не подключён');
-  points.push({t:s.air.temperatureC,r:s.air.relativeHumidity});
-  if(points.length>120)points.shift();
+  if(s.uptimeMs!=null){if(uptimeMs&&s.uptimeMs<uptimeMs-5000){live=[];hist=[];loadHistory()}uptimeMs=s.uptimeMs}
+  const ts=uptimeMs/1000,t=+s.air.temperatureC,r=+s.air.relativeHumidity;
+  if(Number.isFinite(t)&&Number.isFinite(r)){
+    const last=live[live.length-1];
+    if(!last||ts-last.ts>=5){live.push({ts,t,r});if(live.length>3200)live.shift()}
+  }
+  $('lgTemp').textContent=Number.isFinite(t)?t.toFixed(1)+' °C':'—';
+  $('lgRh').textContent=Number.isFinite(r)?r.toFixed(1)+' %':'—';
   draw();
 }
 
-function draw(){const c=$('chart'),x=c.getContext('2d'),w=c.clientWidth||700,h=160,d=devicePixelRatio||1;c.width=w*d;c.height=h*d;x.scale(d,d);x.clearRect(0,0,w,h);x.fillStyle='#8fa2b5';x.font='11px system-ui';x.fillText('t,°C',6,12);x.fillText('RH,%',48,12);if(points.length<2)return;
-let tMin=Math.min(...points.map(p=>p.t)),tMax=Math.max(...points.map(p=>p.t));
-if(tMax-tMin<5){const mid=(tMax+tMin)/2;tMin=mid-2.5;tMax=mid+2.5;}
-const px=i=>i*w/(points.length-1);
-x.strokeStyle='#55d6be';x.beginPath();points.forEach((p,i)=>{const py=h-(p.t-tMin)/(tMax-tMin)*h;i?x.lineTo(px(i),py):x.moveTo(px(i),py)});x.stroke();
-x.strokeStyle='#ffbd69';x.beginPath();points.forEach((p,i)=>{const py=h-p.r/100*h;i?x.lineTo(px(i),py):x.moveTo(px(i),py)});x.stroke()}
+const C_T='#55d6be',C_H='#ffbd69';
 
-async function refresh(){try{render(await request('/api/state'));const e=await fetch('/api/events');$('events').textContent=e.ok?await e.text():'Нет событий'}catch(e){$('connection').textContent='нет связи';$('connection').className='badge'}
-if(document.getElementById('tab-calibration').classList.contains('active'))refreshCal();}
+function niceTicks(min,max,count){
+  const span=(max-min)||1,raw=span/count,mag=Math.pow(10,Math.floor(Math.log10(raw))),norm=raw/mag;
+  const step=(norm<1.5?1:norm<3.5?2:norm<7.5?5:10)*mag;
+  const ticks=[];for(let v=Math.ceil(min/step)*step;v<=max+1e-9;v+=step)ticks.push(v);
+  return ticks;
+}
+
+function timeStep(sec){const steps=[30,60,120,300,600,900,1800,3600,7200,10800,21600,43200];for(const s of steps)if(sec/s<=8)return s;return 86400}
+
+function fmtAxis(sec){if(sec<=0)return 'сейчас';if(sec<60)return '−'+Math.round(sec)+' с';if(sec<3600)return '−'+Math.round(sec/60)+' мин';const h=Math.floor(sec/3600),m=Math.round(sec%3600/60);return m?'−'+h+' ч '+m+' мин':'−'+h+' ч'}
+
+function series(){const lastHist=hist.length?hist[hist.length-1].ts:-1;return hist.concat(live.filter(p=>p.ts>lastHist))}
+
+function draw(){
+  const c=$('chart'),x=c.getContext('2d'),w=c.clientWidth||700,h=220,d=devicePixelRatio||1;
+  c.width=w*d;c.height=h*d;x.setTransform(d,0,0,d,0,0);x.clearRect(0,0,w,h);
+  const ML=46,MR=46,MT=10,MB=24,pw=w-ML-MR,ph=h-MT-MB;
+  const data=series();
+  const tNow=Math.max(uptimeMs/1000,data.length?data[data.length-1].ts:0);
+  const t0=tNow-rangeSec;
+  const view=data.filter(p=>p.ts>=t0-60);
+  x.font='11px system-ui';
+  let tMin=Infinity,tMax=-Infinity;
+  view.forEach(p=>{if(p.t<tMin)tMin=p.t;if(p.t>tMax)tMax=p.t});
+  if(!view.length){tMin=0;tMax=40}
+  if(tMax-tMin<5){const m=(tMax+tMin)/2;tMin=m-2.5;tMax=m+2.5}
+  tMin=Math.floor(tMin);tMax=Math.ceil(tMax);
+  const yT=v=>MT+ph-(v-tMin)/(tMax-tMin)*ph;
+  const yH=v=>MT+ph-v/100*ph;
+  const tsX=ts=>ML+(ts-t0)/rangeSec*pw;
+  geom={ML,MR,pw,ph,t0,tNow};
+  x.textBaseline='middle';x.strokeStyle='#1d2836';x.lineWidth=1;
+  x.fillStyle=C_T;x.textAlign='right';
+  niceTicks(tMin,tMax,5).forEach(v=>{const y=yT(v);if(y<MT-1||y>MT+ph+1)return;x.beginPath();x.moveTo(ML,y);x.lineTo(w-MR,y);x.stroke();x.fillText(v.toFixed(0),ML-7,y)});
+  x.fillStyle=C_H;x.textAlign='left';
+  [0,25,50,75,100].forEach(v=>{const y=yH(v);if(y<MT-1||y>MT+ph+1)return;x.fillText(String(v),w-MR+7,y)});
+  x.fillStyle='#8fa2b5';x.textAlign='center';x.textBaseline='top';
+  const step=timeStep(rangeSec);
+  for(let k=Math.floor(rangeSec/step);k>=1;k--){
+    const ts=tNow-k*step,px=tsX(ts);
+    x.strokeStyle='#1d2836';x.beginPath();x.moveTo(px,MT);x.lineTo(px,MT+ph);x.stroke();
+    x.fillText(fmtAxis(k*step),px,MT+ph+7);
+  }
+  x.fillText('сейчас',w-MR,MT+ph+7);
+  if(view.length>1){
+    [['t',C_T,v=>yT(v)],['r',C_H,v=>yH(v)]].forEach(([key,color,yv])=>{
+      x.strokeStyle=color;x.lineWidth=1.7;x.lineJoin='round';x.beginPath();
+      view.forEach((p,i)=>{const px=tsX(p.ts),py=yv(p[key]);i?x.lineTo(px,py):x.moveTo(px,py)});
+      x.stroke();
+    });
+    x.lineWidth=1;
+  }
+  let tsTarget=null;
+  if(pinned)tsTarget=pinTs;
+  else if(hoverX!=null&&hoverX>=ML&&hoverX<=w-MR)tsTarget=t0+(hoverX-ML)/pw*rangeSec;
+  drawHover(x,w,h,ML,MR,MT,MB,pw,ph,t0,tNow,yT,yH,view,tsTarget);
+}
+
+function drawHover(x,w,h,ML,MR,MT,MB,pw,ph,t0,tNow,yT,yH,view,tsTarget){
+  const tip=$('chartTip');
+  if(tsTarget==null||tsTarget<t0-60||!view.length){tip.hidden=true;return}
+  let best=null,bd=Infinity;
+  view.forEach(p=>{const dd=Math.abs(p.ts-tsTarget);if(dd<bd){bd=dd;best=p}});
+  if(!best||bd>120){tip.hidden=true;return}
+  const cx=ML+(best.ts-t0)/rangeSec*pw;
+  x.strokeStyle='#4a5d77';x.setLineDash([4,4]);x.beginPath();x.moveTo(cx,MT);x.lineTo(cx,MT+ph);x.stroke();x.setLineDash([]);
+  [[yT(best.t),C_T],[yH(best.r),C_H]].forEach(pair=>{x.fillStyle=pair[1];x.beginPath();x.arc(cx,pair[0],3.5,0,7);x.fill()});
+  tip.hidden=false;
+  tip.innerHTML='<div class="tt-time">'+fmtAgo(tNow-best.ts)+'</div>'
+    +'<div class="row"><span><i style="background:'+C_T+'"></i>Температура</span><b>'+best.t.toFixed(1)+' °C</b></div>'
+    +'<div class="row"><span><i style="background:'+C_H+'"></i>Влажность</span><b>'+best.r.toFixed(1)+' %</b></div>'
+    +(pinned?'<div class="tt-pin">закреплено · клик по графику, чтобы скрыть</div>':'');
+  const tw=tip.offsetWidth,th=tip.offsetHeight;
+  let lx=cx+13;if(lx+tw>w-4)lx=cx-tw-13;let ly=Math.max(4,Math.min(h-th-4,yT(best.t)-th/2));
+  tip.style.left=lx+'px';tip.style.top=ly+'px';
+}
+
+async function loadHistory(){
+  let text='';
+  try{const r=await fetch('/api/history');if(r.ok)text=await r.text()}catch(e){}
+  const epochs=[[]];let prev=-1;
+  text.split('\n').forEach(l=>{const s=l.trim();if(!s)return;let p;try{p=JSON.parse(s)}catch(e){return}
+    if(!p||p.ts==null)return;
+    if(prev>=0&&p.ts<prev-60000)epochs.push([]);
+    epochs[epochs.length-1].push({ts:p.ts/1000,t:+p.t||0,r:+p.rh||0});
+    prev=p.ts});
+  hist=epochs[epochs.length-1]||[];
+  draw();
+}
+
+let evTick=0;
+async function refresh(){
+  try{render(await request('/api/state'))}catch(e){$('connection').textContent='нет связи';$('connection').className='badge'}
+  try{if(evTick++%10===0){const e=await fetch('/api/events');$('events').textContent=e.ok?await e.text():'Нет событий'}}catch(e){}
+  if(document.getElementById('tab-calibration').classList.contains('active'))refreshCal();
+}
 
 async function refreshCal(){
   let c;try{c=await request('/api/calibration')}catch(e){return}
@@ -136,4 +233,23 @@ else{body.temperatureC=+$('targetTemp').value;body.relativeHumidity=+$('targetRh
 request('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(refresh).catch(()=>{})};
 $('pause').onclick=()=>request('/api/pause',{method:'POST'}).then(refresh).catch(()=>{});
 $('stop').onclick=()=>request('/api/stop',{method:'POST'}).then(refresh).catch(()=>{});
-setInterval(refresh,1000);refresh();loadConfig();
+
+const chart=$('chart');
+chart.addEventListener('pointermove',e=>{hoverX=e.offsetX;if(!pinned)draw()});
+chart.addEventListener('pointerleave',()=>{if(!pinned){hoverX=null;draw()}});
+chart.addEventListener('pointerdown',e=>{
+  if(!geom)return;
+  if(pinned){pinned=false;pinTs=null;hoverX=e.offsetX}
+  else{pinned=true;pinTs=geom.t0+(e.offsetX-geom.ML)/geom.pw*rangeSec;hoverX=e.offsetX}
+  draw();
+});
+document.querySelectorAll('#rangebar .rg').forEach(b=>b.onclick=()=>{
+  rangeSec=+b.dataset.range;
+  document.querySelectorAll('#rangebar .rg').forEach(q=>q.classList.toggle('active',q===b));
+  draw();
+});
+$('histReload').onclick=()=>loadHistory();
+window.addEventListener('resize',draw);
+
+setInterval(refresh,1000);refresh();loadConfig();loadHistory();
+setInterval(loadHistory,300000);

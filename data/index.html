@@ -39,7 +39,27 @@
         </div>
         <div class="actions"><button class="primary" id="start">Запустить</button><button id="pause">Пауза</button><button class="danger" id="stop">Стоп</button></div>
       </section>
-      <section class="panel"><h2>История</h2><canvas id="chart" height="160"></canvas><pre id="events">Загрузка…</pre></section>
+      <section class="panel">
+        <h2>История</h2>
+        <div class="chart-legend">
+          <span class="lg t"><i></i>Температура воздуха <b id="lgTemp">—</b></span>
+          <span class="lg h"><i></i>Влажность <b id="lgRh">—</b></span>
+        </div>
+        <div class="rangebar" id="rangebar">
+          <button class="rg" data-range="900">15 мин</button>
+          <button class="rg" data-range="3600">1 ч</button>
+          <button class="rg active" data-range="14400">4 ч</button>
+          <button class="rg" data-range="86400">24 ч</button>
+          <span class="spacer"></span>
+          <button id="histReload">Обновить</button>
+        </div>
+        <div class="chartwrap">
+          <canvas id="chart" height="220"></canvas>
+          <div id="chartTip" class="chart-tip" hidden></div>
+        </div>
+        <p class="charthint">График строится по данным телеметрии с устройства (1 точка в минуту) и текущим измерениям. Метки времени отсчитываются от текущего момента.</p>
+        <pre id="events">Загрузка…</pre>
+      </section>
     </section>
 
     <section id="tab-network" class="tabbody panel">

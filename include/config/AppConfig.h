@@ -34,7 +34,10 @@ struct AppConfig {
   char wifiSsid[33];
   char wifiPassword[65];
   char hostname[32];
-  char otaPassword[33];
+  // Web panel credentials. An empty password disables authentication;
+  // the login falls back to "admin" when left empty.
+  char webLogin[33];
+  char webPassword[65];
 
   float ntcR25Ohms;
   float ntcBeta;

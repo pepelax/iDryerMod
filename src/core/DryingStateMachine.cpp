@@ -1,5 +1,7 @@
 #include "core/DryingStateMachine.h"
 
+#include <cstdio>
+
 void DryingStateMachine::begin(DeviceState& state, uint32_t now) {
   state.mode = DryingMode::Idle;
   state.phase = DryingPhase::Idle;
@@ -7,15 +9,16 @@ void DryingStateMachine::begin(DeviceState& state, uint32_t now) {
   state.phaseStartedAt = now;
   state.runStartedAt = 0;
   state.remainingSeconds = 0;
+  state.runLabel[0] = '\0';
   durationSeconds_ = 0;
   pausedAt_ = 0;
   pausedFrom_ = DryingPhase::Idle;
 }
 
 bool DryingStateMachine::start(DeviceState& state, DryingMode mode,
-                               const Setpoints& setpoints, uint32_t now) {
+                                const Setpoints& setpoints, uint32_t now) {
   if (mode != DryingMode::TimedPreset && mode != DryingMode::TimedManual &&
-      mode != DryingMode::Continuous) {
+      mode != DryingMode::Continuous && mode != DryingMode::Calibration) {
     return false;
   }
   durationSeconds_ = setpoints.durationSeconds;
@@ -25,7 +28,19 @@ bool DryingStateMachine::start(DeviceState& state, DryingMode mode,
   state.fault = FaultCode::None;
   state.phaseStartedAt = now;
   state.runStartedAt = 0;
-  state.remainingSeconds = durationSeconds_;
+  // Continuous and calibration modes have no countdown; the UI shows elapsed
+  // time instead.
+  state.remainingSeconds =
+      (mode == DryingMode::Continuous || mode == DryingMode::Calibration)
+          ? 0UL
+          : durationSeconds_;
+  std::snprintf(state.runLabel, sizeof(state.runLabel), "%s",
+                mode == DryingMode::Continuous
+                    ? "CONTINUOUS"
+                    : (mode == DryingMode::Calibration
+                           ? "CALIB"
+                           : (mode == DryingMode::TimedManual ? "MANUAL"
+                                                              : "PRESET")));
   return true;
 }
 
@@ -76,7 +91,8 @@ void DryingStateMachine::update(DeviceState& state, uint32_t now) {
       state.runStartedAt = now;
     }
   } else if (state.phase == DryingPhase::Drying &&
-             state.mode != DryingMode::Continuous) {
+             state.mode != DryingMode::Continuous &&
+             state.mode != DryingMode::Calibration) {
     const uint32_t elapsed = (now - state.runStartedAt) / 1000UL;
     state.remainingSeconds = elapsed >= durationSeconds_ ? 0 : durationSeconds_ - elapsed;
     if (state.remainingSeconds == 0) {

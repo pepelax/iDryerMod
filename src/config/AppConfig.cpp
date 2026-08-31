@@ -6,8 +6,7 @@
 
 void setDefaultConfig(AppConfig& config) {
   std::memset(&config, 0, sizeof(config));
-  std::strncpy(config.hostname, "filament-dryer", sizeof(config.hostname) - 1);
-  std::strncpy(config.otaPassword, "change-me", sizeof(config.otaPassword) - 1);
+  std::strncpy(config.hostname, "dryer", sizeof(config.hostname) - 1);
   config.ntcR25Ohms = defaults::kNtcR25Ohms;
   config.ntcBeta = defaults::kNtcBeta;
   config.ntcDividerOhms = defaults::kNtcDividerOhms;

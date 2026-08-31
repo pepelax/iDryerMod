@@ -5,6 +5,8 @@
 #include <esp_idf_version.h>
 #include <esp_task_wdt.h>
 
+#include <cstring>
+
 #include "config/AppConfig.h"
 #include "config/BoardConfig.h"
 #include "config/Defaults.h"
@@ -16,6 +18,7 @@
 #include "drivers/RotaryEncoder.h"
 #include "drivers/Sh1106Display.h"
 #include "services/ActuatorService.h"
+#include "services/CalibrationService.h"
 #include "services/ControlService.h"
 #include "services/NetworkService.h"
 #include "services/SafetyService.h"
@@ -47,11 +50,13 @@ ServoVentOutput ventOutput(
 ActuatorService actuators(heaterOutput, fanOutput, ventOutput);
 SafetyService safety(defaults::kAirMaxTemperatureC);
 ControlService control(appConfig, safety, stateMachine);
+CalibrationService calibration(appConfig, stateMachine, storage, weightOne,
+                               weightTwo);
 Sh1106Display display(board::kDisplayAddress);
 RotaryEncoderInput input(board::kEncoderA, board::kEncoderB, board::kButton);
-UiService ui(display, input, stateMachine);
+UiService ui(display, input, stateMachine, calibration, appConfig);
 NetworkService network(appConfig);
-WebService web(deviceState, appConfig, stateMachine, storage);
+WebService web(deviceState, appConfig, stateMachine, storage, calibration);
 
 uint32_t lastSensors = 0;
 uint32_t lastControl = 0;
@@ -68,10 +73,17 @@ void setup() {
   setDefaultConfig(appConfig);
   const bool storageOk = storage.begin();
   storage.loadConfig(appConfig);
+  // Migrate configs saved before the mDNS name was shortened; a custom
+  // hostname chosen by the user is left untouched.
+  if (std::strcmp(appConfig.hostname, "filament-dryer") == 0) {
+    strncpy(appConfig.hostname, "dryer", sizeof(appConfig.hostname) - 1);
+    appConfig.hostname[sizeof(appConfig.hostname) - 1] = '\0';
+  }
   weightOne.setScale(appConfig.weightScaleOne);
   weightTwo.setScale(appConfig.weightScaleTwo);
   weightOne.setTareRaw(appConfig.weightTareOne);
   weightTwo.setTareRaw(appConfig.weightTareTwo);
+  calibration.begin();
   safety.setAirMaxTemperature(appConfig.airMaxTemperatureC);
   stateMachine.begin(deviceState, millis());
   deviceState.actuators.ventAngle = appConfig.safeVentAngle;
@@ -109,6 +121,9 @@ void loop() {
   }
   if (static_cast<uint32_t>(now - lastControl) >= defaults::kControlPeriodMs) {
     control.update(deviceState, now);
+    // Calibration runs after the control loop: it compensates the displayed
+    // weights and forces cooling airflow during the drift cool-down phase.
+    calibration.update(deviceState, now);
     actuators.apply(deviceState.actuators, now);
     lastControl = now;
   }

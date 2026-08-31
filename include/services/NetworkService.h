@@ -12,7 +12,11 @@ class NetworkService {
  private:
   const AppConfig& config_;
   uint32_t lastReconnectAt_ = 0;
+  uint32_t lastAddressRefreshAt_ = 0;
+  uint32_t staStartedAt_ = 0;
+  uint32_t lastConnectedAt_ = 0;
   bool mdnsStarted_ = false;
   bool connectionStateKnown_ = false;
   bool wasConnected_ = false;
+  bool apActive_ = false;
 };

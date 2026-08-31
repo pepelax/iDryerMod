@@ -25,7 +25,24 @@ constexpr uint32_t kNtcPeriodMs = 100;
 constexpr uint32_t kWeightPeriodMs = 100;
 constexpr uint32_t kHumidityPidPeriodMs = 5000;
 constexpr uint32_t kDisplayPeriodMs = 250;
+// Half-quadrature decoding reports two counts per mechanical detent.
+constexpr uint8_t kEncoderCountsPerDetent = 2;
+constexpr uint8_t kMenuVisibleRows = 4;
+constexpr float kManualTemperatureMinimumC = 20.0f;
+constexpr uint32_t kManualDurationStepSeconds = 1800;   // 30 minutes
+constexpr uint32_t kManualDurationMinSeconds = 1800;    // 30 minutes
+constexpr uint32_t kManualDurationMaxSeconds = 43200;   // 12 hours
 constexpr uint32_t kHistoryPeriodMs = 60000;
+// Drift calibration: the chamber is heated and cooled with a reference mass
+// on the scales, sampling (temperature, raw) pairs into 5C bands.
+constexpr uint8_t kWeightCalBandWidthC = 5;
+constexpr float kWeightCalBaseTempC = 20.0f;
+constexpr float kWeightCalTargetC = 80.0f;
+constexpr uint32_t kWeightCalPointPeriodMs = 30000;
+constexpr uint32_t kWeightCalMaxDurationMs = 6UL * 3600UL * 1000UL;
+constexpr uint16_t kKnownWeightStepG = 25;
+constexpr uint16_t kKnownWeightMinG = 25;
+constexpr uint16_t kKnownWeightMaxG = 5000;
 constexpr uint32_t kWebPollPeriodMs = 1000;
 constexpr uint32_t kDiagnosticsPeriodMs = 5000;
 constexpr uint32_t kWatchdogTimeoutSeconds = 5;

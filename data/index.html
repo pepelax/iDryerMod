@@ -9,26 +9,85 @@
 <body>
   <main class="shell">
     <header><div><span class="eyebrow">FILAMENT DRYER</span><h1>Панель сушилки</h1></div><span id="connection" class="badge">offline</span></header>
-    <section class="grid cards">
-      <article><span>Воздух</span><strong id="airTemp">—</strong><small id="airRh">—</small></article>
-      <article><span>Нагреватель</span><strong id="heaterTemp">—</strong><small id="heaterPower">—</small></article>
-      <article><span>Катушка 1</span><strong id="weight1">—</strong><small>грамм</small></article>
-      <article><span>Катушка 2</span><strong id="weight2">—</strong><small>грамм</small></article>
-      <article><span>Всего</span><strong id="weightTotal">—</strong><small>грамм</small></article>
-      <article><span>Режим</span><strong id="mode">—</strong><small id="phase">—</small></article>
+    <nav class="tabs">
+      <button class="tab active" data-tab="main">Управление</button>
+      <button class="tab" data-tab="network">Сеть</button>
+      <button class="tab" data-tab="security">Безопасность</button>
+      <button class="tab" data-tab="calibration">Калибровка</button>
+    </nav>
+
+    <section id="tab-main" class="tabbody active">
+      <section class="grid cards">
+        <article><span>Воздух</span><strong id="airTemp">—</strong><small id="airRh">—</small></article>
+        <article><span>Нагреватель</span><strong id="heaterTemp">—</strong><small id="heaterPower">—</small></article>
+        <article><span>Цель</span><strong id="setTemp">—</strong><small id="setRh">—</small></article>
+        <article><span>Режим</span><strong id="mode">—</strong><small id="phase">—</small></article>
+        <article><span>Время</span><strong id="timeLeft">—</strong><small id="timeNote">—</small></article>
+        <article><span>Вентилятор</span><strong id="fanPower">—</strong><small id="ventAngle">—</small></article>
+        <article><span>Катушка 1</span><strong id="weight1">—</strong><small>грамм</small></article>
+        <article><span>Катушка 2</span><strong id="weight2">—</strong><small>грамм</small></article>
+        <article><span>Всего</span><strong id="weightTotal">—</strong><small>грамм</small></article>
+      </section>
+      <section class="panel">
+        <h2>Запуск сушки</h2>
+        <div class="form">
+          <label>Режим<select id="runMode"><option value="timed_preset">Пресет</option><option value="timed_manual" selected>Ручной</option><option value="continuous">Постоянный</option></select></label>
+          <label id="presetRow">Пресет<select id="preset"><option value="">Загрузка…</option></select></label>
+          <label>Температура, °C<input id="targetTemp" type="number" value="45" min="20" max="75"></label>
+          <label>Влажность, %<input id="targetRh" type="number" value="20" min="1" max="90"></label>
+          <label id="durationRow">Время, ч<input id="duration" type="number" value="6" min="0.5" max="72" step="0.5"></label>
+        </div>
+        <div class="actions"><button class="primary" id="start">Запустить</button><button id="pause">Пауза</button><button class="danger" id="stop">Стоп</button></div>
+      </section>
+      <section class="panel"><h2>История</h2><canvas id="chart" height="160"></canvas><pre id="events">Загрузка…</pre></section>
     </section>
-    <section class="panel">
-      <h2>Запуск сушки</h2>
+
+    <section id="tab-network" class="tabbody panel">
+      <h2>Сеть</h2>
+      <p class="netstatus" id="netStatus">—</p>
       <div class="form">
-        <label>Режим<select id="runMode"><option value="timed_preset">Пресет</option><option value="timed_manual">Ручной</option><option value="continuous">Постоянный</option></select></label>
-        <label>Температура, °C<input id="targetTemp" type="number" value="45" min="20" max="75"></label>
-        <label>Влажность, %<input id="targetRh" type="number" value="20" min="1" max="90"></label>
-        <label>Время, ч<input id="duration" type="number" value="6" min="0" max="72"></label>
+        <label>Wi-Fi сеть<select id="wifiSsid"><option value="">Поиск сетей…</option></select></label>
+        <label>SSID вручную<input id="wifiSsidManual" type="text" maxlength="32" placeholder="имя сети, если нет в списке"></label>
+        <label>Пароль Wi-Fi<input id="wifiPassword" type="password" maxlength="64" placeholder="пароль домашней сети"></label>
       </div>
-      <div class="actions"><button class="primary" id="start">Запустить</button><button id="pause">Пауза</button><button class="danger" id="stop">Стоп</button></div>
+      <div class="actions"><button id="scan">Поиск сетей</button><button class="primary" id="saveWifi">Сохранить и перезагрузить</button></div>
     </section>
-    <section class="panel"><h2>История</h2><canvas id="chart" height="160"></canvas><pre id="events">Загрузка…</pre></section>
-    <footer>mDNS: filament-dryer.local · OTA доступно через ArduinoOTA</footer>
+
+    <section id="tab-security" class="tabbody panel">
+      <h2>Безопасность</h2>
+      <p class="netstatus" id="secStatus">—</p>
+      <div class="form">
+        <label>Логин<input id="webLogin" type="text" maxlength="32" placeholder="admin"></label>
+        <label>Пароль<input id="webPassword" type="password" maxlength="64" placeholder="пусто = вход отключён"></label>
+      </div>
+      <div class="actions"><button class="primary" id="saveSecurity">Сохранить</button></div>
+      <p class="netstatus">Пустой пароль отключает запрос входа. Пароль также защищает OTA-обновления (после перезагрузки). Чтобы сменить только логин, введите пароль заново.</p>
+    </section>
+
+    <section id="tab-calibration" class="tabbody panel">
+      <h2>Калибровка весов</h2>
+      <p class="netstatus" id="calDriftStatus">—</p>
+      <div class="actions">
+        <button class="primary" id="driftStart">Температурная калибровка</button>
+        <button class="danger" id="driftCancel" style="display:none">Отменить прогрев</button>
+      </div>
+      <p class="netstatus">Порядок калибровки масштаба: 1) снимите груз и нажмите «Обнулить»; 2) положите груз известной массы; 3) укажите массу и нажмите «Калибровать». Температурная калибровка: груз остаётся на весах всё время, камера греется до ~73 °C и остывает (несколько часов).</p>
+      <div class="grid cards">
+        <article><span>Катушка 1</span><strong id="calRaw1">—</strong><small id="calInfo1">—</small></article>
+        <article><span>Катушка 2</span><strong id="calRaw2">—</strong><small id="calInfo2">—</small></article>
+      </div>
+      <div class="form">
+        <label>Масса груза 1, г<input id="known1" type="number" value="1000" min="25" max="5000" step="25"></label>
+        <label>Масса груза 2, г<input id="known2" type="number" value="1000" min="25" max="5000" step="25"></label>
+      </div>
+      <div class="actions">
+        <button id="tare">Обнулить</button>
+        <button class="primary" id="cal1">Калибровать катушку 1</button>
+        <button class="primary" id="cal2">Калибровать катушку 2</button>
+      </div>
+    </section>
+
+    <footer>mDNS: dryer.local · OTA доступно через ArduinoOTA</footer>
   </main>
   <script src="/app.js"></script>
 </body>

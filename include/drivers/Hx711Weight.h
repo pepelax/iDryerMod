@@ -13,6 +13,7 @@ class Hx711Weight final : public IWeightSensor {
   void tare() override;
   void setScale(float scale) override { scale_ = scale == 0.0f ? 1.0f : scale; }
   void setTareRaw(int32_t tareRaw) override { tareRaw_ = tareRaw; }
+  int32_t tareRaw() const override { return tareRaw_; }
 
  private:
   HX711 adc_;

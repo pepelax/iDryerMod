@@ -36,6 +36,7 @@ class IWeightSensor {
   virtual void tare() = 0;
   virtual void setScale(float scale) = 0;
   virtual void setTareRaw(int32_t tareRaw) = 0;
+  virtual int32_t tareRaw() const = 0;
 };
 
 class IDisplay {
@@ -43,10 +44,8 @@ class IDisplay {
   virtual ~IDisplay() = default;
   virtual bool begin() = 0;
   virtual void render(const DeviceState& state) = 0;
-  virtual void render(const DeviceState& state, DisplayView view,
-                      uint8_t selectedMode) {
-    (void)view;
-    (void)selectedMode;
+  virtual void render(const DeviceState& state, const UiState& ui) {
+    (void)ui;
     render(state);
   }
 };
@@ -69,6 +68,9 @@ class IStorage {
   virtual bool saveConfig(const AppConfig& config) = 0;
   virtual bool appendTelemetry(const DeviceState& state) = 0;
   virtual bool appendEvent(const EventRecord& event) = 0;
+  virtual bool loadWeightCalibration(uint8_t spool, WeightCalTable& table) = 0;
+  virtual bool saveWeightCalibration(uint8_t spool,
+                                     const WeightCalTable& table) = 0;
 };
 
 class IHeaterOutput {

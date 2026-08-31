@@ -5,6 +5,7 @@
 #include <esp_idf_version.h>
 #include <esp_task_wdt.h>
 
+#include <algorithm>
 #include <cstring>
 
 #include "config/AppConfig.h"
@@ -90,7 +91,10 @@ void setup() {
   control.begin();
 
   Wire.begin(board::kI2cSda, board::kI2cScl, board::kI2cFrequency);
-  actuators.begin(appConfig.safeVentAngle);
+  const float heaterFanFloor = std::min(
+      100.0f, std::max(appConfig.fanMinimumDuty, defaults::kActiveFanMinimumDuty));
+  actuators.begin(appConfig.safeVentAngle,
+                  static_cast<uint8_t>(heaterFanFloor));
   const bool sensorsOk = sensors.begin();
   const bool uiOk = ui.begin();
   const bool networkOk = network.begin(deviceState);
@@ -128,7 +132,8 @@ void loop() {
     lastControl = now;
   }
   ui.update(deviceState, now);
-  if (static_cast<uint32_t>(now - lastHistory) >= defaults::kHistoryPeriodMs) {
+  if (static_cast<uint32_t>(now - lastHistory) >= defaults::kHistoryPeriodMs &&
+      !deviceState.otaInProgress) {
     const bool historyOk = storage.appendTelemetry(deviceState);
     Serial.printf("[storage] telemetry append: %s\n", historyOk ? "OK" : "FAILED");
     lastHistory = now;
@@ -137,12 +142,17 @@ void loop() {
       defaults::kDiagnosticsPeriodMs) {
     Serial.printf(
         "[sensors] AIR temp=%.2fC RH=%.2f%% abs=%.2fg/m3 valid=%u | "
-        "NTC raw=%d temp=%.2fC valid=%u | HX1 raw=%ld valid=%u | "
+        "NTC raw=%d temp=%.2fC valid=%u | CTRL heatSp=%.1fC heat=%.0f%% | "
+        "PURGE phase=%u slope=%.2fg/m3h n=%u | "
+        "HX1 raw=%ld valid=%u | "
         "HX2 raw=%ld valid=%u | ENC A=%d B=%d SW=%d\n",
         deviceState.air.temperatureC, deviceState.air.relativeHumidity,
         deviceState.air.absoluteHumidityGm3, deviceState.air.valid,
         deviceState.heater.raw, deviceState.heater.temperatureC,
-        deviceState.heater.valid, static_cast<long>(deviceState.spoolOne.raw),
+        deviceState.heater.valid, deviceState.heaterSetpointC,
+        deviceState.actuators.heaterPower, deviceState.purgePhase,
+        deviceState.ahSlopeGm3PerHour, deviceState.ahSlopeSamples,
+        static_cast<long>(deviceState.spoolOne.raw),
         deviceState.spoolOne.valid, static_cast<long>(deviceState.spoolTwo.raw),
         deviceState.spoolTwo.valid, digitalRead(board::kEncoderA),
         digitalRead(board::kEncoderB), digitalRead(board::kButton));

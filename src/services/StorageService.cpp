@@ -207,11 +207,15 @@ bool StorageService::appendTelemetry(const DeviceState& state) {
   doc["ts"] = state.air.timestamp;
   doc["t"] = state.air.temperatureC;
   doc["rh"] = state.air.relativeHumidity;
+  doc["ah"] = state.air.absoluteHumidityGm3;
   doc["ntc"] = state.heater.temperatureC;
   doc["w1"] = state.spoolOne.grams;
   doc["w2"] = state.spoolTwo.grams;
   doc["heat"] = state.actuators.heaterPower;
   doc["fan"] = state.actuators.fanPower;
+  doc["vent"] = state.actuators.ventAngle;
+  doc["pph"] = state.purgePhase;
+  doc["slope"] = state.ahSlopeGm3PerHour;
   serializeJson(doc, file);
   file.println();
   file.close();

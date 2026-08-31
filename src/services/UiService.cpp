@@ -130,7 +130,8 @@ void UiService::handleClick(DeviceState& state, uint32_t now) {
     stateMachine_.resume(state, now);
     return;
   }
-  if (state.phase == DryingPhase::Warmup || state.phase == DryingPhase::Drying) {
+  if (state.phase == DryingPhase::Warmup || state.phase == DryingPhase::Drying ||
+      state.phase == DryingPhase::Hold) {
     stateMachine_.pause(state, now);
     return;
   }
@@ -303,9 +304,13 @@ void UiService::startPreset(DeviceState& state, uint32_t now, uint8_t index) {
   const DryingPreset& preset = presets[index];
   Setpoints setpoints;
   setpoints.airTemperatureC = preset.airTemperatureC;
+  setpoints.holdTemperatureC = preset.holdTemperatureC;
   setpoints.relativeHumidity = preset.relativeHumidity;
+  setpoints.drynessSlopeGm3PerHour = preset.drynessSlopeGm3PerHour;
   setpoints.heaterLimitC = preset.heaterMaxTemperatureC;
-  setpoints.durationSeconds = preset.durationSeconds;
+  setpoints.minDurationSeconds = preset.minDurationSeconds;
+  setpoints.maxDurationSeconds = preset.maxDurationSeconds;
+  setpoints.ventilation = toVentilationPlan(preset.ventilation);
   if (stateMachine_.start(state, DryingMode::TimedPreset, setpoints, now)) {
     std::snprintf(state.runLabel, sizeof(state.runLabel), "%s", preset.name);
     ui_.screen = UiScreen::Dashboard;

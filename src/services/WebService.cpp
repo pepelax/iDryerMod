@@ -36,6 +36,7 @@ const char* phaseName(DryingPhase phase) {
     case DryingPhase::Precheck: return "precheck";
     case DryingPhase::Warmup: return "warmup";
     case DryingPhase::Drying: return "drying";
+    case DryingPhase::Hold: return "hold";
     case DryingPhase::Paused: return "paused";
     case DryingPhase::Finish: return "finish";
     case DryingPhase::Cooldown: return "cooldown";
@@ -160,6 +161,7 @@ void WebService::update() { server_.handleClient(); }
 
 void WebService::sendState() {
   StaticJsonDocument<1536> doc;
+  doc["version"] = APP_VERSION;
   doc["mode"] = modeName(state_.mode);
   doc["phase"] = phaseName(state_.phase);
   doc["fault"] = faultName(state_.fault);
@@ -190,8 +192,20 @@ void WebService::sendState() {
   doc["weights"]["two"] = state_.spoolTwo.grams;
   doc["weights"]["total"] = state_.spoolOne.grams + state_.spoolTwo.grams;
   doc["outputs"]["heater"] = state_.actuators.heaterPower;
+  doc["outputs"]["heaterSetpointC"] = state_.heaterSetpointC;
   doc["outputs"]["fan"] = state_.actuators.fanPower;
   doc["outputs"]["ventAngle"] = state_.actuators.ventAngle;
+  // Dryness telemetry: moisture-release slope from the sealed-window AH
+  // regression, the pulse-ventilation phase (0 sealed, 1 settle, 2 purge)
+  // and the consecutive quiet-window streak that ends in Hold.
+  doc["dryness"]["ahSlopeGm3PerHour"] = state_.ahSlopeGm3PerHour;
+  doc["dryness"]["ahSlopeSamples"] = state_.ahSlopeSamples;
+  doc["dryness"]["purgePhase"] = state_.purgePhase;
+  doc["dryness"]["stableWindows"] = state_.drynessChecks;
+  doc["dryness"]["slopeThreshold"] = state_.setpoints.drynessSlopeGm3PerHour;
+  doc["setpoints"]["holdTemperatureC"] = state_.setpoints.holdTemperatureC;
+  doc["setpoints"]["minDurationSeconds"] = state_.setpoints.minDurationSeconds;
+  doc["setpoints"]["maxDurationSeconds"] = state_.setpoints.maxDurationSeconds;
   String body;
   serializeJson(doc, body);
   server_.send(200, "application/json", body);
@@ -217,8 +231,11 @@ void WebService::sendConfig() {
     item["id"] = defaultsList[i].id;
     item["name"] = defaultsList[i].name;
     item["temperatureC"] = defaultsList[i].airTemperatureC;
+    item["holdTemperatureC"] = defaultsList[i].holdTemperatureC;
     item["relativeHumidity"] = defaultsList[i].relativeHumidity;
-    item["durationSeconds"] = defaultsList[i].durationSeconds;
+    item["drynessSlopeGm3PerHour"] = defaultsList[i].drynessSlopeGm3PerHour;
+    item["minDurationSeconds"] = defaultsList[i].minDurationSeconds;
+    item["maxDurationSeconds"] = defaultsList[i].maxDurationSeconds;
   }
   String body;
   serializeJson(doc, body);
@@ -234,10 +251,15 @@ void WebService::runCommand() {
 
   float temperature = 45.0f;
   float humidity = 20.0f;
+  float holdTemperature = 0.0f;
+  float drynessSlope = 0.0f;
   uint32_t duration = 3600UL;
+  uint32_t minDuration = 0UL;
+  uint32_t maxDuration = 0UL;
   float heaterLimit = config_.heaterMaxTemperatureC;
   char label[24] = "";
   bool fromPreset = false;
+  VentilationPlan ventilation;
   if (mode == DryingMode::TimedPreset && doc.containsKey("preset")) {
     const String presetId = doc["preset"].as<const char*>();
     size_t count = 0;
@@ -246,8 +268,12 @@ void WebService::runCommand() {
       if (presetId == presets[i].id) {
         temperature = presets[i].airTemperatureC;
         humidity = presets[i].relativeHumidity;
-        duration = presets[i].durationSeconds;
         heaterLimit = presets[i].heaterMaxTemperatureC;
+        ventilation = toVentilationPlan(presets[i].ventilation);
+        minDuration = presets[i].minDurationSeconds;
+        maxDuration = presets[i].maxDurationSeconds;
+        holdTemperature = presets[i].holdTemperatureC;
+        drynessSlope = presets[i].drynessSlopeGm3PerHour;
         strlcpy(label, presets[i].name, sizeof(label));
         fromPreset = true;
         break;
@@ -262,9 +288,16 @@ void WebService::runCommand() {
   Setpoints setpoints;
   setpoints.airTemperatureC =
       std::max(20.0f, std::min(config_.airMaxTemperatureC, temperature));
+  setpoints.holdTemperatureC =
+      std::max(0.0f, std::min(config_.airMaxTemperatureC, holdTemperature));
   setpoints.relativeHumidity = humidity;
+  setpoints.drynessSlopeGm3PerHour = std::max(0.0f, drynessSlope);
   setpoints.heaterLimitC = heaterLimit;
   setpoints.durationSeconds = mode == DryingMode::Continuous ? 0UL : duration;
+  setpoints.minDurationSeconds = minDuration;
+  setpoints.maxDurationSeconds =
+      mode == DryingMode::Continuous ? 0UL : maxDuration;
+  setpoints.ventilation = ventilation;
   const bool accepted = stateMachine_.start(state_, mode, setpoints, millis());
   if (accepted) {
     if (label[0] != '\0') {

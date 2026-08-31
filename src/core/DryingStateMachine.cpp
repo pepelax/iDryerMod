@@ -2,6 +2,8 @@
 
 #include <cstdio>
 
+#include "config/Defaults.h"
+
 void DryingStateMachine::begin(DeviceState& state, uint32_t now) {
   state.mode = DryingMode::Idle;
   state.phase = DryingPhase::Idle;
@@ -22,18 +24,24 @@ bool DryingStateMachine::start(DeviceState& state, DryingMode mode,
     return false;
   }
   durationSeconds_ = setpoints.durationSeconds;
+  minDurationSeconds_ = setpoints.minDurationSeconds;
+  maxDurationSeconds_ = setpoints.maxDurationSeconds;
   state.mode = mode;
   state.phase = DryingPhase::Precheck;
   state.setpoints = setpoints;
   state.fault = FaultCode::None;
   state.phaseStartedAt = now;
   state.runStartedAt = 0;
+  state.drynessChecks = 0;
   // Continuous and calibration modes have no countdown; the UI shows elapsed
-  // time instead.
-  state.remainingSeconds =
-      (mode == DryingMode::Continuous || mode == DryingMode::Calibration)
-          ? 0UL
-          : durationSeconds_;
+  // time instead. Preset runs count down to their safety ceiling.
+  if (mode == DryingMode::Continuous || mode == DryingMode::Calibration) {
+    state.remainingSeconds = 0UL;
+  } else if (mode == DryingMode::TimedPreset) {
+    state.remainingSeconds = maxDurationSeconds_;
+  } else {
+    state.remainingSeconds = durationSeconds_;
+  }
   std::snprintf(state.runLabel, sizeof(state.runLabel), "%s",
                 mode == DryingMode::Continuous
                     ? "CONTINUOUS"
@@ -45,7 +53,8 @@ bool DryingStateMachine::start(DeviceState& state, DryingMode mode,
 }
 
 void DryingStateMachine::pause(DeviceState& state, uint32_t now) {
-  if (state.phase == DryingPhase::Warmup || state.phase == DryingPhase::Drying) {
+  if (state.phase == DryingPhase::Warmup || state.phase == DryingPhase::Drying ||
+      state.phase == DryingPhase::Hold) {
     pausedFrom_ = state.phase;
     state.phase = DryingPhase::Paused;
     pausedAt_ = now;
@@ -90,14 +99,45 @@ void DryingStateMachine::update(DeviceState& state, uint32_t now) {
       state.phaseStartedAt = now;
       state.runStartedAt = now;
     }
-  } else if (state.phase == DryingPhase::Drying &&
-             state.mode != DryingMode::Continuous &&
-             state.mode != DryingMode::Calibration) {
-    const uint32_t elapsed = (now - state.runStartedAt) / 1000UL;
-    state.remainingSeconds = elapsed >= durationSeconds_ ? 0 : durationSeconds_ - elapsed;
-    if (state.remainingSeconds == 0) {
-      state.phase = DryingPhase::Finish;
+  } else if (state.phase == DryingPhase::Drying) {
+    if (state.mode == DryingMode::TimedManual) {
+      const uint32_t elapsed = (now - state.runStartedAt) / 1000UL;
+      state.remainingSeconds =
+          elapsed >= durationSeconds_ ? 0 : durationSeconds_ - elapsed;
+      if (state.remainingSeconds == 0) {
+        state.phase = DryingPhase::Finish;
+        state.phaseStartedAt = now;
+      }
+    } else if (state.mode == DryingMode::TimedPreset) {
+      // Dry-to-completion: the preset run keeps drying until the spool is
+      // dry (min time served AND the AH slope stayed quiet for
+      // kDrynessStableWindows sealed windows) or the safety ceiling expires;
+      // either way it settles into Hold instead of finishing.
+      const uint32_t elapsed = (now - state.runStartedAt) / 1000UL;
+      if (maxDurationSeconds_ > 0UL) {
+        state.remainingSeconds = elapsed >= maxDurationSeconds_
+                                     ? 0
+                                     : maxDurationSeconds_ - elapsed;
+      }
+      const bool minElapsed = elapsed >= minDurationSeconds_;
+      const bool dry = state.drynessChecks >= defaults::kDrynessStableWindows;
+      const bool maxElapsed =
+          maxDurationSeconds_ > 0UL && elapsed >= maxDurationSeconds_;
+      if (maxElapsed || (minElapsed && dry)) {
+        state.phase = DryingPhase::Hold;
+        state.phaseStartedAt = now;
+        state.remainingSeconds = 0;
+      }
+    }
+  } else if (state.phase == DryingPhase::Hold) {
+    // Fresh moisture (lid opened, wet spool added) resets drynessChecks in
+    // the control loop; re-enter Drying with a fresh drying clock so the
+    // min/max budget applies to the new episode.
+    if (state.mode == DryingMode::TimedPreset && state.drynessChecks == 0) {
+      state.phase = DryingPhase::Drying;
       state.phaseStartedAt = now;
+      state.runStartedAt = now;
+      state.remainingSeconds = maxDurationSeconds_;
     }
   } else if (state.phase == DryingPhase::Finish &&
              static_cast<uint32_t>(now - state.phaseStartedAt) >= 30000UL) {

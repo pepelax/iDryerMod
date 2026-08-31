@@ -20,6 +20,12 @@ constexpr uint8_t kServoMovementThresholdDegrees = 2;
 constexpr uint32_t kServoReleaseDelayMs = 500;
 constexpr uint32_t kHeaterWindowMs = 1000;
 constexpr uint32_t kControlPeriodMs = 100;
+// Temperature cascade: the air PID outputs a heater (NTC) setpoint bounded
+// by [air target, heater limit - margin]; the inner thermostat then holds the
+// heater inside a +/-hysteresis/2 band around it.
+constexpr float kHeaterThermostatHysteresisC = 2.0f;
+constexpr float kHeaterSetpointMarginC = 5.0f;
+constexpr uint32_t kHeaterMinSwitchIntervalMs = 2000;
 constexpr uint32_t kAirSensorPeriodMs = 1000;
 constexpr uint32_t kNtcPeriodMs = 100;
 constexpr uint32_t kWeightPeriodMs = 100;
@@ -33,6 +39,14 @@ constexpr uint32_t kManualDurationStepSeconds = 1800;   // 30 minutes
 constexpr uint32_t kManualDurationMinSeconds = 1800;    // 30 minutes
 constexpr uint32_t kManualDurationMaxSeconds = 43200;   // 12 hours
 constexpr uint32_t kHistoryPeriodMs = 60000;
+// Pulse ventilation and dryness estimation.
+constexpr float kPurgeRiseTriggerGm3 = 0.5f;   // AH rise that justifies a purge
+constexpr float kPurgeFloorMarginGm3 = 3.0f;   // saturation guard above target
+constexpr uint32_t kAhSamplePeriodMs = 30000;  // sealed-window sampling rate
+constexpr uint8_t kAhSlopeMinSamples = 8;      // ~4 min before slope is valid
+// Consecutive quiet sealed windows required before a preset run may move
+// from Drying to Hold (empirical; recalibrate from logged slope data).
+constexpr uint8_t kDrynessStableWindows = 2;
 // Drift calibration: the chamber is heated and cooled with a reference mass
 // on the scales, sampling (temperature, raw) pairs into 5C bands.
 constexpr uint8_t kWeightCalBandWidthC = 5;

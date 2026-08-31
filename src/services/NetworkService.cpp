@@ -3,9 +3,33 @@
 #include <ArduinoOTA.h>
 #include <ESPmDNS.h>
 #include <WiFi.h>
+#include <esp_idf_version.h>
+#include <esp_task_wdt.h>
 
 #include <cstdio>
 #include <cstring>
+
+namespace {
+// ArduinoOTA receives the whole image inside handle(), blocking the main
+// loop for the duration of the transfer. The loop task must leave the
+// watchdog for that window, otherwise the 5 s timeout resets the board
+// mid-upload.
+void leaveWatchdog() {
+#if ESP_IDF_VERSION_MAJOR >= 5
+  esp_task_wdt_delete(nullptr);
+#else
+  esp_task_wdt_delete(NULL);
+#endif
+}
+
+void rejoinWatchdog() {
+#if ESP_IDF_VERSION_MAJOR >= 5
+  esp_task_wdt_add(nullptr);
+#else
+  esp_task_wdt_add(NULL);
+#endif
+}
+}  // namespace
 
 NetworkService::NetworkService(const AppConfig& config) : config_(config) {}
 
@@ -59,11 +83,18 @@ bool NetworkService::begin(DeviceState& state) {
   if (config_.webPassword[0] != '\0') {
     ArduinoOTA.setPassword(config_.webPassword);
   }
-  ArduinoOTA.onStart([&state]() { state.otaInProgress = true; });
-  ArduinoOTA.onEnd([&state]() { state.otaInProgress = false; });
+  ArduinoOTA.onStart([&state]() {
+    state.otaInProgress = true;
+    leaveWatchdog();
+  });
+  ArduinoOTA.onEnd([&state]() {
+    state.otaInProgress = false;
+    rejoinWatchdog();
+  });
   ArduinoOTA.onError([&state](ota_error_t error) {
     (void)error;
     state.otaInProgress = false;
+    rejoinWatchdog();
   });
   ArduinoOTA.begin();
   Serial.printf("[network] OTA hostname: %s\n", config_.hostname);

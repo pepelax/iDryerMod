@@ -25,6 +25,7 @@ const char* phaseName(DryingPhase phase) {
     case DryingPhase::Precheck: return "CHECK";
     case DryingPhase::Warmup: return "WARMUP";
     case DryingPhase::Drying: return "DRYING";
+    case DryingPhase::Hold: return "HOLD";
     case DryingPhase::Paused: return "PAUSED";
     case DryingPhase::Finish: return "DONE";
     case DryingPhase::Cooldown: return "COOL";
@@ -331,9 +332,10 @@ void Sh1106Display::renderMainMenu(const UiState& ui) {
   for (size_t i = 0; i < presetCount && total < kMainMenuCapacity - 4; ++i) {
     char shortName[8];
     shortPresetName(presets[i].name, shortName, sizeof(shortName));
-    std::snprintf(buffers[total], kLineCapacity, " %-5s %2.0fC %luH", shortName,
-                  presets[i].airTemperatureC,
-                  static_cast<unsigned long>(presets[i].durationSeconds / 3600UL));
+    std::snprintf(buffers[total], kLineCapacity, " %-5s %2.0fC %lu-%luH",
+                  shortName, presets[i].airTemperatureC,
+                  static_cast<unsigned long>(presets[i].minDurationSeconds / 3600UL),
+                  static_cast<unsigned long>(presets[i].maxDurationSeconds / 3600UL));
     lines[total] = buffers[total];
     ++total;
   }

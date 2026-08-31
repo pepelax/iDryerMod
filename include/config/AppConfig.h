@@ -20,12 +20,21 @@ struct VentilationProfile {
   uint32_t purgeDurationSeconds;
 };
 
+// Dry-to-completion preset: active drying runs until the spool is dry (the
+// sealed-window AH slope stays below drynessSlopeGm3PerHour for
+// kDrynessStableWindows consecutive windows after minDurationSeconds), then
+// the chamber drops to holdTemperatureC and keeps watching. maxDurationSeconds
+// is the safety ceiling. All timings/thresholds are empirical first guesses -
+// recalibrate from logged slope data.
 struct DryingPreset {
   char id[16];
   char name[24];
   float airTemperatureC;
+  float holdTemperatureC;
   float relativeHumidity;
-  uint32_t durationSeconds;
+  float drynessSlopeGm3PerHour;
+  uint32_t minDurationSeconds;
+  uint32_t maxDurationSeconds;
   float heaterMaxTemperatureC;
   VentilationProfile ventilation;
 };

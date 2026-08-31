@@ -16,6 +16,8 @@ class DryingStateMachine {
 
  private:
   uint32_t durationSeconds_ = 0;
+  uint32_t minDurationSeconds_ = 0;
+  uint32_t maxDurationSeconds_ = 0;
   uint32_t pausedAt_ = 0;
   DryingPhase pausedFrom_ = DryingPhase::Idle;
 };

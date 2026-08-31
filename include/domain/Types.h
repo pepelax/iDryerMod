@@ -19,6 +19,7 @@ enum class DryingPhase : uint8_t {
   Precheck,
   Warmup,
   Drying,
+  Hold,     // spool dry: keep it at storage temperature, watch for re-wetting
   Paused,
   Finish,
   Cooldown,
@@ -116,11 +117,47 @@ struct ActuatorState {
   uint16_t ventAngle = 0;
 };
 
+// Pulse-ventilation plan for the humidity loop: the vent stays sealed while
+// moisture released by the filament accumulates (and is measured), and opens
+// in short purges to exchange the chamber air. Mirrors the preset
+// VentilationProfile with runtime defaults for manual runs.
+struct VentilationPlan {
+  uint8_t circulationFanDuty = 25;  // fan while sealed (heater airflow)
+  uint8_t purgeFanDuty = 100;       // fan while purging/settling
+  uint16_t ventClosedAngle = 15;
+  uint16_t ventOpenAngle = 90;
+  uint32_t minSealSeconds = 600;    // min sealed time before a purge may start
+  uint32_t settleSeconds = 180;     // mixing time after the vent closes
+  uint32_t maxPurgeSeconds = 45;    // hard cap on vent-open time
+};
+
+inline VentilationPlan toVentilationPlan(const VentilationProfile& profile) {
+  VentilationPlan plan;
+  plan.circulationFanDuty = profile.minimumFan;
+  plan.purgeFanDuty = profile.maximumFan;
+  plan.ventClosedAngle = profile.closedAngle;
+  plan.ventOpenAngle = profile.openAngle;
+  plan.minSealSeconds = profile.purgePeriodSeconds;
+  plan.maxPurgeSeconds = profile.purgeDurationSeconds;
+  return plan;
+}
+
 struct Setpoints {
   float airTemperatureC = 0.0f;
+  // Storage temperature held once the spool is dry (Hold phase). Zero means
+  // "same as airTemperatureC".
+  float holdTemperatureC = 0.0f;
   float relativeHumidity = 0.0f;
+  // Sealed-window AH slope below which the spool counts as dry (g/m^3 per
+  // hour). Zero disables the dryness criterion (run to the time ceiling).
+  float drynessSlopeGm3PerHour = 0.0f;
   float heaterLimitC = 0.0f;
+  // TimedManual: plain countdown. TimedPreset: min = active-drying floor,
+  // max = safety ceiling (0 = unlimited).
   uint32_t durationSeconds = 0;
+  uint32_t minDurationSeconds = 0;
+  uint32_t maxDurationSeconds = 0;
+  VentilationPlan ventilation;
 };
 
 struct DeviceState {
@@ -129,6 +166,18 @@ struct DeviceState {
   WeightReading spoolOne;
   WeightReading spoolTwo;
   ActuatorState actuators;
+  // Cascade inner-loop target for the heater (NTC), derived by the air PID.
+  // Zero when no run is active.
+  float heaterSetpointC = 0.0f;
+  // Dryness telemetry: least-squares slope of absolute humidity over the
+  // current sealed window (g/m^3 per hour) and its sample count, plus the
+  // pulse-ventilation phase (0 sealed, 1 settle, 2 purge). drynessChecks
+  // counts consecutive sealed windows whose slope stayed below the preset
+  // threshold; reaching kDrynessStableWindows means the spool is dry.
+  float ahSlopeGm3PerHour = 0.0f;
+  uint8_t ahSlopeSamples = 0;
+  uint8_t purgePhase = 0;
+  uint8_t drynessChecks = 0;
   Setpoints setpoints;
   DryingMode mode = DryingMode::Idle;
   DryingPhase phase = DryingPhase::Idle;

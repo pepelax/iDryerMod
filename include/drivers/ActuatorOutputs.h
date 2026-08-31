@@ -34,13 +34,28 @@ class FanOutput final : public IFanOutput {
 
 class ServoVentOutput final : public IVentOutput {
  public:
-  ServoVentOutput(uint8_t pin, uint16_t minUs, uint16_t maxUs);
+  ServoVentOutput(uint8_t pin, uint16_t minUs, uint16_t maxUs,
+                  uint8_t movementThresholdDegrees, uint32_t releaseDelayMs,
+                  uint8_t closedAngle, uint8_t openAngle);
   void begin() override;
   void setAngle(uint16_t angle) override;
 
  private:
+  void attach();
+  void releaseIfReady(uint32_t now);
+
   Servo servo_;
   uint8_t pin_;
   uint16_t minUs_;
   uint16_t maxUs_;
+  uint8_t movementThresholdDegrees_;
+  uint32_t releaseDelayMs_;
+  uint8_t closedAngle_;
+  uint8_t openAngle_;
+  uint16_t lastDrivenAngle_ = 0;
+  uint16_t lastRequestedAngle_ = 0;
+  uint32_t commandStartedAt_ = 0;
+  bool hasDrivenAngle_ = false;
+  bool hasRequestedAngle_ = false;
+  bool attached_ = false;
 };

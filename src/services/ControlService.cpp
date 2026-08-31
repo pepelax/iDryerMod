@@ -23,9 +23,14 @@ void ControlService::update(DeviceState& state, uint32_t now) {
     return;
   }
   if (state.phase == DryingPhase::Idle || state.phase == DryingPhase::Paused ||
-      state.phase == DryingPhase::Fault || state.phase == DryingPhase::Cooldown) {
+      state.phase == DryingPhase::Fault || state.phase == DryingPhase::Finish ||
+      state.phase == DryingPhase::Cooldown) {
     state.actuators.heaterPower = 0.0f;
-    state.actuators.fanPower = state.phase == DryingPhase::Cooldown ? 60 : 0;
+    state.actuators.fanPower =
+        (state.phase == DryingPhase::Finish || state.phase == DryingPhase::Cooldown)
+            ? 60
+            : 0;
+    state.actuators.ventAngle = config_.safeVentAngle;
     return;
   }
 
@@ -34,6 +39,7 @@ void ControlService::update(DeviceState& state, uint32_t now) {
     stateMachine_.fault(state, fault, now);
     state.actuators.heaterPower = 0.0f;
     state.actuators.fanPower = 100;
+    state.actuators.ventAngle = config_.safeVentAngle;
     return;
   }
 
@@ -47,7 +53,14 @@ void ControlService::update(DeviceState& state, uint32_t now) {
   // Reverse-acting loop: demand must grow when measured moisture is above target.
   const float humidityDemand =
       humidityPid_.compute(absoluteTarget, state.air.absoluteHumidityGm3, now);
-  const float boundedDemand = std::max(0.0f, std::min(100.0f, humidityDemand));
+  // Keep a circulation flow whenever the chamber is actively controlled. A
+  // humidity PID output of zero must not stop the fans during warmup.
+  const float configuredMinimum =
+      std::max(0.0f, std::min(100.0f, config_.fanMinimumDuty));
+  const float boundedDemand =
+      std::max(defaults::kActiveFanMinimumDuty,
+               std::max(configuredMinimum,
+                        std::max(0.0f, std::min(100.0f, humidityDemand))));
   state.actuators.fanPower = static_cast<uint8_t>(boundedDemand);
   state.actuators.ventAngle = static_cast<uint16_t>(
       15.0f + (90.0f - 15.0f) * boundedDemand / 100.0f);

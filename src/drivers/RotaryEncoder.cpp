@@ -6,6 +6,7 @@ RotaryEncoderInput::RotaryEncoderInput(uint8_t pinA, uint8_t pinB, uint8_t butto
     : pinA_(pinA), pinB_(pinB), buttonPin_(buttonPin) {}
 
 bool RotaryEncoderInput::begin() {
+  ESP32Encoder::useInternalWeakPullResistors = puType::up;
   pinMode(pinA_, INPUT_PULLUP);
   pinMode(pinB_, INPUT_PULLUP);
   encoder_.attachHalfQuad(pinA_, pinB_);

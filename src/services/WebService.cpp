@@ -106,10 +106,15 @@ void WebService::sendState() {
   doc["fault"] = static_cast<uint8_t>(state_.fault);
   doc["remainingSeconds"] = state_.remainingSeconds;
   doc["wifiConnected"] = state_.wifiConnected;
+  doc["air"]["valid"] = state_.air.valid;
   doc["air"]["temperatureC"] = state_.air.temperatureC;
   doc["air"]["relativeHumidity"] = state_.air.relativeHumidity;
   doc["air"]["absoluteHumidityGm3"] = state_.air.absoluteHumidityGm3;
+  doc["heater"]["valid"] = state_.heater.valid;
+  doc["heater"]["raw"] = state_.heater.raw;
   doc["heater"]["temperatureC"] = state_.heater.temperatureC;
+  doc["weights"]["oneValid"] = state_.spoolOne.valid;
+  doc["weights"]["twoValid"] = state_.spoolTwo.valid;
   doc["weights"]["one"] = state_.spoolOne.grams;
   doc["weights"]["two"] = state_.spoolTwo.grams;
   doc["weights"]["total"] = state_.spoolOne.grams + state_.spoolTwo.grams;

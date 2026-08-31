@@ -25,6 +25,7 @@ float NtcSensor::rawToCelsius(int raw) const {
 bool NtcSensor::update(uint32_t now) {
   const int raw = analogRead(pin_);
   const float temperature = rawToCelsius(raw);
+  reading_.raw = raw;
   reading_.temperatureC = temperature;
   reading_.timestamp = now;
   reading_.valid = std::isfinite(temperature) && temperature > -40.0f &&

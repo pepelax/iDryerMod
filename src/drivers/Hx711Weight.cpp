@@ -1,5 +1,6 @@
 #include "drivers/Hx711Weight.h"
 
+#include <Arduino.h>
 #include <algorithm>
 
 Hx711Weight::Hx711Weight(uint8_t doutPin, uint8_t sckPin)
@@ -7,6 +8,7 @@ Hx711Weight::Hx711Weight(uint8_t doutPin, uint8_t sckPin)
 
 bool Hx711Weight::begin() {
   adc_.begin(doutPin_, sckPin_);
+  pinMode(doutPin_, INPUT_PULLUP);
   adc_.set_gain(128);
   return true;
 }

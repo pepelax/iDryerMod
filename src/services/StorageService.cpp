@@ -6,11 +6,23 @@
 #include "config/AppConfig.h"
 
 bool StorageService::begin() {
-  return preferences_.begin("dryer", false) && LittleFS.begin(true);
+  const bool preferencesOk = preferences_.begin("dryer", false);
+  const bool littleFsOk = LittleFS.begin(true);
+  if (littleFsOk) {
+    File telemetry = LittleFS.open("/telemetry.jsonl", FILE_READ);
+    Serial.printf("[storage] LittleFS total=%u used=%u telemetry=%s size=%u\n",
+                  static_cast<unsigned>(LittleFS.totalBytes()),
+                  static_cast<unsigned>(LittleFS.usedBytes()),
+                  telemetry ? "present" : "absent",
+                  telemetry ? static_cast<unsigned>(telemetry.size()) : 0U);
+    if (telemetry) telemetry.close();
+  }
+  return preferencesOk && littleFsOk;
 }
 
 bool StorageService::loadConfig(AppConfig& config) {
   setDefaultConfig(config);
+  if (!preferences_.isKey("config")) return false;
   const size_t expected = sizeof(AppConfig);
   if (preferences_.getBytesLength("config") != expected) return false;
   return preferences_.getBytes("config", &config, expected) == expected;

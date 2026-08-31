@@ -3,7 +3,8 @@
 #include <cmath>
 
 namespace {
-constexpr float kWaterVaporMolarMass = 18.016f;
+// kg/mol; the result below is converted to g/m^3 exactly once.
+constexpr float kWaterVaporMolarMass = 0.018016f;
 constexpr float kGasConstant = 8.314462618f;
 constexpr float kKelvinOffset = 273.15f;
 

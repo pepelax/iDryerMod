@@ -12,13 +12,18 @@ bool Aht30Sensor::begin() {
 }
 
 bool Aht30Sensor::update(uint32_t now) {
-  sensors_event_t humidity;
-  sensors_event_t temperature;
-  sensor_.getEvent(&humidity, &temperature);
+  sensors_event_t humidity{};
+  sensors_event_t temperature{};
+  if (!sensor_.getEvent(&humidity, &temperature)) {
+    reading_.timestamp = now;
+    reading_.valid = false;
+    return false;
+  }
   if (!std::isfinite(temperature.temperature) ||
       !std::isfinite(humidity.relative_humidity) ||
       temperature.temperature < -40.0f || temperature.temperature > 100.0f ||
       humidity.relative_humidity < 0.0f || humidity.relative_humidity > 100.0f) {
+    reading_.timestamp = now;
     reading_.valid = false;
     return false;
   }

@@ -13,4 +13,6 @@ class NetworkService {
   const AppConfig& config_;
   uint32_t lastReconnectAt_ = 0;
   bool mdnsStarted_ = false;
+  bool connectionStateKnown_ = false;
+  bool wasConnected_ = false;
 };

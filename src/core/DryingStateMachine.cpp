@@ -52,6 +52,7 @@ void DryingStateMachine::resume(DeviceState& state, uint32_t now) {
 void DryingStateMachine::stop(DeviceState& state, uint32_t now) {
   state.mode = DryingMode::Idle;
   state.phase = DryingPhase::Cooldown;
+  state.fault = FaultCode::None;
   state.phaseStartedAt = now;
   state.remainingSeconds = 0;
 }

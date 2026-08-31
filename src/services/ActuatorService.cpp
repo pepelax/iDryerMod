@@ -3,11 +3,11 @@
 ActuatorService::ActuatorService(IHeaterOutput& heater, IFanOutput& fan, IVentOutput& vent)
     : heater_(heater), fan_(fan), vent_(vent) {}
 
-void ActuatorService::begin() {
+void ActuatorService::begin(uint16_t safeAngle) {
   heater_.begin();
   fan_.begin();
   vent_.begin();
-  safe(90);
+  safe(safeAngle);
 }
 
 void ActuatorService::apply(const ActuatorState& state, uint32_t now) {

@@ -25,6 +25,11 @@ enum class DryingPhase : uint8_t {
   Fault
 };
 
+enum class DisplayView : uint8_t {
+  Dashboard,
+  ModeMenu
+};
+
 enum class FaultCode : uint8_t {
   None,
   NtcInvalid,
@@ -46,6 +51,7 @@ struct AirReading {
 };
 
 struct HeaterReading {
+  int raw = 0;
   float temperatureC = 0.0f;
   bool valid = false;
   uint32_t timestamp = 0;

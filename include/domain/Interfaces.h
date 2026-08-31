@@ -43,6 +43,12 @@ class IDisplay {
   virtual ~IDisplay() = default;
   virtual bool begin() = 0;
   virtual void render(const DeviceState& state) = 0;
+  virtual void render(const DeviceState& state, DisplayView view,
+                      uint8_t selectedMode) {
+    (void)view;
+    (void)selectedMode;
+    render(state);
+  }
 };
 
 class IInput {

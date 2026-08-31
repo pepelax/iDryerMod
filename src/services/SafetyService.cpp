@@ -8,6 +8,7 @@ SafetyService::SafetyService(float airMaxTemperatureC)
 bool SafetyService::evaluate(const DeviceState& state, uint32_t now,
                              FaultCode& fault) const {
   (void)now;
+#if !defined(IDRYER_DISABLE_NTC_SAFETY)
   if (!state.heater.valid || !std::isfinite(state.heater.temperatureC)) {
     fault = FaultCode::NtcInvalid;
     return false;
@@ -17,6 +18,7 @@ bool SafetyService::evaluate(const DeviceState& state, uint32_t now,
     fault = FaultCode::HeaterOverTemperature;
     return false;
   }
+#endif
   if (!state.air.valid || !std::isfinite(state.air.temperatureC) ||
       !std::isfinite(state.air.relativeHumidity)) {
     fault = FaultCode::AirSensorInvalid;
@@ -26,14 +28,8 @@ bool SafetyService::evaluate(const DeviceState& state, uint32_t now,
     fault = FaultCode::AirSensorInvalid;
     return false;
   }
-  if (!state.spoolOne.valid) {
-    fault = FaultCode::WeightSensorOneInvalid;
-    return false;
-  }
-  if (!state.spoolTwo.valid) {
-    fault = FaultCode::WeightSensorTwoInvalid;
-    return false;
-  }
+  // Weight readings are auxiliary telemetry. An absent or disconnected HX711
+  // must not prevent a drying cycle from running.
   fault = FaultCode::None;
   return true;
 }

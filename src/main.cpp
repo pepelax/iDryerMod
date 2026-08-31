@@ -14,7 +14,7 @@
 #include "drivers/Hx711Weight.h"
 #include "drivers/NtcSensor.h"
 #include "drivers/RotaryEncoder.h"
-#include "drivers/Ssd1306Display.h"
+#include "drivers/Sh1106Display.h"
 #include "services/ActuatorService.h"
 #include "services/ControlService.h"
 #include "services/NetworkService.h"
@@ -40,11 +40,14 @@ SensorService sensors(airSensor, ntcSensor, weightOne, weightTwo);
 HeaterOutput heaterOutput(board::kHeater, defaults::kHeaterWindowMs);
 FanOutput fanOutput(board::kFan, board::kFanPwmChannel, board::kFanPwmFrequency,
                    board::kFanPwmResolution);
-ServoVentOutput ventOutput(board::kServo, defaults::kServoMinUs, defaults::kServoMaxUs);
+ServoVentOutput ventOutput(
+    board::kServo, defaults::kServoMinUs, defaults::kServoMaxUs,
+    defaults::kServoMovementThresholdDegrees, defaults::kServoReleaseDelayMs,
+    defaults::kServoClosedAngle, defaults::kServoOpenAngle);
 ActuatorService actuators(heaterOutput, fanOutput, ventOutput);
 SafetyService safety(defaults::kAirMaxTemperatureC);
 ControlService control(appConfig, safety, stateMachine);
-Ssd1306Display display(board::kDisplayAddress);
+Sh1106Display display(board::kDisplayAddress);
 RotaryEncoderInput input(board::kEncoderA, board::kEncoderB, board::kButton);
 UiService ui(display, input, stateMachine);
 NetworkService network(appConfig);
@@ -53,13 +56,17 @@ WebService web(deviceState, appConfig, stateMachine, storage);
 uint32_t lastSensors = 0;
 uint32_t lastControl = 0;
 uint32_t lastHistory = 0;
+uint32_t lastDiagnostics = 0;
 }
 
 void setup() {
   Serial.begin(115200);
   delay(50);
+  Serial.printf("\n[iDryer] firmware %s\n", APP_VERSION);
+  Serial.printf("[boot] flash=%u bytes, heap=%u bytes\n", ESP.getFlashChipSize(),
+                ESP.getFreeHeap());
   setDefaultConfig(appConfig);
-  storage.begin();
+  const bool storageOk = storage.begin();
   storage.loadConfig(appConfig);
   weightOne.setScale(appConfig.weightScaleOne);
   weightTwo.setScale(appConfig.weightScaleTwo);
@@ -67,14 +74,20 @@ void setup() {
   weightTwo.setTareRaw(appConfig.weightTareTwo);
   safety.setAirMaxTemperature(appConfig.airMaxTemperatureC);
   stateMachine.begin(deviceState, millis());
+  deviceState.actuators.ventAngle = appConfig.safeVentAngle;
   control.begin();
 
   Wire.begin(board::kI2cSda, board::kI2cScl, board::kI2cFrequency);
-  actuators.begin();
-  sensors.begin();
-  ui.begin();
-  network.begin(deviceState);
-  web.begin();
+  actuators.begin(appConfig.safeVentAngle);
+  const bool sensorsOk = sensors.begin();
+  const bool uiOk = ui.begin();
+  const bool networkOk = network.begin(deviceState);
+  const bool webOk = web.begin();
+  Serial.printf("[boot] storage=%s sensors=%s ui=%s network=%s web=%s\n",
+                storageOk ? "OK" : "FAILED", sensorsOk ? "OK" : "MISSING",
+                uiOk ? "OK" : "MISSING", networkOk ? "OK" : "FAILED",
+                webOk ? "OK" : "FAILED");
+  Serial.println("[boot] control loop started; Wi-Fi is optional");
 
 #if ESP_IDF_VERSION_MAJOR >= 5
   esp_task_wdt_config_t wdtConfig = {
@@ -101,8 +114,24 @@ void loop() {
   }
   ui.update(deviceState, now);
   if (static_cast<uint32_t>(now - lastHistory) >= defaults::kHistoryPeriodMs) {
-    storage.appendTelemetry(deviceState);
+    const bool historyOk = storage.appendTelemetry(deviceState);
+    Serial.printf("[storage] telemetry append: %s\n", historyOk ? "OK" : "FAILED");
     lastHistory = now;
+  }
+  if (static_cast<uint32_t>(now - lastDiagnostics) >=
+      defaults::kDiagnosticsPeriodMs) {
+    Serial.printf(
+        "[sensors] AIR temp=%.2fC RH=%.2f%% abs=%.2fg/m3 valid=%u | "
+        "NTC raw=%d temp=%.2fC valid=%u | HX1 raw=%ld valid=%u | "
+        "HX2 raw=%ld valid=%u | ENC A=%d B=%d SW=%d\n",
+        deviceState.air.temperatureC, deviceState.air.relativeHumidity,
+        deviceState.air.absoluteHumidityGm3, deviceState.air.valid,
+        deviceState.heater.raw, deviceState.heater.temperatureC,
+        deviceState.heater.valid, static_cast<long>(deviceState.spoolOne.raw),
+        deviceState.spoolOne.valid, static_cast<long>(deviceState.spoolTwo.raw),
+        deviceState.spoolTwo.valid, digitalRead(board::kEncoderA),
+        digitalRead(board::kEncoderB), digitalRead(board::kButton));
+    lastDiagnostics = now;
   }
   network.update(deviceState, now);
   web.update();

@@ -363,7 +363,7 @@ uint32_t UiService::adjustDuration(uint32_t valueSeconds, int32_t steps) const {
 
 uint16_t UiService::adjustKnownGrams(uint16_t grams, int32_t steps) const {
   int32_t value = static_cast<int32_t>(grams) +
-                  steps * static_cast<int32_t>(defaults::kKnownWeightStepG);
+                   steps * static_cast<int32_t>(defaults::kKnownWeightStepG);
   value = std::min(static_cast<int32_t>(defaults::kKnownWeightMaxG),
                    std::max(static_cast<int32_t>(defaults::kKnownWeightMinG),
                             value));

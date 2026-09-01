@@ -189,6 +189,9 @@ struct DeviceState {
   uint32_t remainingSeconds = 0;
   bool wifiConnected = false;
   bool apActive = false;
+  // Wall clock from NTP: epochSeconds (Unix) is valid only while timeSynced.
+  bool timeSynced = false;
+  uint32_t epochSeconds = 0;
   // Current station or AP address for the web panel, empty when offline.
   char ipAddress[16] = "";
   // Friendlier address to show: "dryer.local" once mDNS is up, otherwise
@@ -200,6 +203,8 @@ struct DeviceState {
 
 struct EventRecord {
   uint32_t timestamp;
+  // Unix epoch when the wall clock was synchronized, 0 otherwise.
+  uint32_t epoch = 0;
   char type[24];
   char message[96];
 };

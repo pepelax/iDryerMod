@@ -41,4 +41,5 @@ class WebService {
   // repeated Basic-auth round trips for fetch() calls.
   String sessionToken_;
   bool scanRunning_ = false;
+  bool wasTimeSynced_ = false;
 };

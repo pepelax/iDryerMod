@@ -35,7 +35,8 @@ Current firmware version: **0.2.1**
 - **Two HX711 load cells** — per-spool weight telemetry with tare/scale
   calibration and a 16-band (5 °C) thermal-drift compensation table.
 - **Web panel + REST API** over Wi-Fi with mDNS (`dryer.local`), telemetry
-  history in LittleFS, optional HTTP Basic authentication.
+  history in LittleFS, NTP time sync with a configurable UTC offset,
+  optional HTTP Basic authentication.
 - **OTA updates over Wi-Fi** — both ArduinoOTA and a web endpoint; no USB
   cable needed after the first flash.
 - **Local UI** — SH1106 OLED + rotary encoder menu.

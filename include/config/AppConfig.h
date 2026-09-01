@@ -47,6 +47,11 @@ struct AppConfig {
   // the login falls back to "admin" when left empty.
   char webLogin[33];
   char webPassword[65];
+  // Wall clock: NTP sync toggle, UTC offset in minutes (e.g. 180 = UTC+3)
+  // and the NTP server. The offset must be a multiple of 30 minutes.
+  bool ntpEnabled = true;
+  int16_t tzOffsetMinutes = 180;
+  char ntpServer[48];
 
   float ntcR25Ohms;
   float ntcBeta;

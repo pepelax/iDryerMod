@@ -113,6 +113,31 @@ bool StorageService::loadConfig(AppConfig& config) {
   strlcpy(config.webPassword,
           preferences_.getString("webPassword", config.webPassword).c_str(),
           sizeof(config.webPassword));
+  // Firmware < 0.3 stored the timezone as a POSIX TZ string ("MSK-3");
+  // convert its numeric part to a UTC offset in minutes once, then drop it.
+  if (preferences_.isKey("timezone")) {
+    const String legacy = preferences_.getString("timezone", "");
+    int hours = 0, minutes = 0;
+    const int sign = legacy.indexOf('-') > 0 ? 1 : -1;
+    const int numberStart = legacy.indexOf('-') > 0
+                                ? legacy.indexOf('-') + 1
+                                : legacy.indexOf('+') + 1;
+    if (numberStart > 0) {
+      hours = legacy.substring(numberStart).toInt();
+      const int colon = legacy.indexOf(':', numberStart);
+      if (colon > 0) minutes = legacy.substring(colon + 1).toInt();
+      config.tzOffsetMinutes =
+          static_cast<int16_t>(sign * (hours * 60 + minutes));
+      preferences_.putShort("tzOff", config.tzOffsetMinutes);
+    }
+    preferences_.remove("timezone");
+  }
+  config.tzOffsetMinutes =
+      preferences_.getShort("tzOff", config.tzOffsetMinutes);
+  config.ntpEnabled = preferences_.getUChar("ntpEn", 1) != 0;
+  strlcpy(config.ntpServer,
+          preferences_.getString("ntpServer", config.ntpServer).c_str(),
+          sizeof(config.ntpServer));
   config.ntcR25Ohms = preferences_.getFloat("ntcR25", config.ntcR25Ohms);
   config.ntcBeta = preferences_.getFloat("ntcBeta", config.ntcBeta);
   config.ntcDividerOhms =
@@ -160,6 +185,9 @@ bool StorageService::saveConfig(const AppConfig& config) {
   preferences_.putString("hostname", config.hostname);
   preferences_.putString("webLogin", config.webLogin);
   preferences_.putString("webPassword", config.webPassword);
+  preferences_.putShort("tzOff", config.tzOffsetMinutes);
+  preferences_.putUChar("ntpEn", config.ntpEnabled ? 1 : 0);
+  preferences_.putString("ntpServer", config.ntpServer);
   preferences_.putFloat("ntcR25", config.ntcR25Ohms);
   preferences_.putFloat("ntcBeta", config.ntcBeta);
   preferences_.putFloat("ntcDivider", config.ntcDividerOhms);
@@ -205,6 +233,8 @@ bool StorageService::appendTelemetry(const DeviceState& state) {
   if (!file) return false;
   StaticJsonDocument<512> doc;
   doc["ts"] = state.air.timestamp;
+  // Wall-clock stamp for the web chart, present once NTP has synchronized.
+  if (state.timeSynced) doc["epoch"] = state.epochSeconds;
   doc["t"] = state.air.temperatureC;
   doc["rh"] = state.air.relativeHumidity;
   doc["ah"] = state.air.absoluteHumidityGm3;
@@ -228,6 +258,7 @@ bool StorageService::appendEvent(const EventRecord& event) {
   if (!file) return false;
   StaticJsonDocument<384> doc;
   doc["ts"] = event.timestamp;
+  if (event.epoch != 0) doc["epoch"] = event.epoch;
   doc["type"] = event.type;
   doc["message"] = event.message;
   serializeJson(doc, file);

@@ -16,7 +16,7 @@ const char kDegC[] = "\xB0" "C";
 
 constexpr uint8_t kMenuTop = 13;
 constexpr uint8_t kMenuRowHeight = 13;
-// Presets (6) + MANUAL + CONTINUOUS + BACK.
+// Presets (6) + MANUAL + CONTINUOUS + CALIB + BACK.
 constexpr uint8_t kMainMenuCapacity = 12;
 constexpr uint8_t kLineCapacity = 20;
 

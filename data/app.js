@@ -2,13 +2,26 @@ const $=id=>document.getElementById(id);
 const phaseNames={idle:'Готов',precheck:'Проверка',warmup:'Прогрев',drying:'Сушка',paused:'Пауза',finish:'Завершение',cooldown:'Охлаждение',fault:'Авария'};
 const faultNames={none:'',ntc_invalid:'Датчик NTC',heater_overtemperature:'Перегрев нагревателя',air_sensor_invalid:'Датчик воздуха',weight1_invalid:'Датчик веса 1',weight2_invalid:'Датчик веса 2',warmup_timeout:'Таймаут прогрева',configuration_invalid:'Конфигурация',watchdog_reset:'Watchdog'};
 const modeNames={idle:'—',timed_preset:'Пресет',timed_manual:'Ручной',continuous:'Постоянный',cooldown:'Охлаждение',calibration:'Калибровка',fault:'Авария'};
-let hist=[],live=[],uptimeMs=0,rangeSec=14400,hoverX=null,pinned=false,pinTs=null,geom=null,presets=[],calBusy=false;
+let hist=[],live=[],uptimeMs=0,wallOff=null,tzOffMin=180,rangeSec=14400,hoverX=null,pinned=false,pinTs=null,geom=null,presets=[],calBusy=false;
 
 async function request(url,options={}){const r=await fetch(url,options);if(!r.ok)throw new Error(r.status);return r.json()}
 
 function fmtTime(sec){if(sec==null||sec<0)return '—';sec=Math.floor(sec);const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60;return (h?h+':':'')+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')}
 
 function fmtAgo(sec){if(sec==null||sec<0)return '—';sec=Math.floor(sec);if(sec<5)return 'сейчас';if(sec<60)return sec+' с назад';if(sec<3600){const m=Math.floor(sec/60),s=sec%60;return m+' мин'+(s?' '+s+' с':'')+' назад'}const h=Math.floor(sec/3600),m=Math.round(sec%3600/60);return h+' ч'+(m?' '+m+' мин':'')+' назад'}
+
+function pad2(n){return String(n).padStart(2,'0')}
+
+function fmtTz(){const a=Math.abs(tzOffMin);return 'UTC'+(tzOffMin<0?'−':'+')+Math.floor(a/60)+(a%60?':'+pad2(a%60):'')}
+
+// Wall-clock rendering in the device timezone (tzOffMin), not the browser's:
+// labels match what the dryer itself shows.
+function fmtWall(sec,withSec){
+  const d=new Date((sec+tzOffMin*60)*1000),n=new Date((Date.now()/1000+tzOffMin*60)*1000);
+  const hm=pad2(d.getUTCHours())+':'+pad2(d.getUTCMinutes())+(withSec?':'+pad2(d.getUTCSeconds()):'');
+  const sameDay=d.getUTCFullYear()===n.getUTCFullYear()&&d.getUTCMonth()===n.getUTCMonth()&&d.getUTCDate()===n.getUTCDate();
+  return sameDay?hm:pad2(d.getUTCDate())+'.'+pad2(d.getUTCMonth()+1)+' '+hm;
+}
 
 function render(s){
   $('connection').textContent=s.wifiConnected?'online':'offline';
@@ -36,14 +49,21 @@ function render(s){
   $('netStatus').textContent=s.apActive
     ?'Режим настройки: точка доступа FilamentDryer-Setup, веб-панель по адресу '+(s.ip||'192.168.4.1')+'. Задайте домашнюю сеть ниже.'
     :(s.wifiConnected?'Wi-Fi подключён · адрес: '+((s.hostname||'dryer')+'.local')+(s.ip?' ('+s.ip+')':''):'Wi-Fi не подключён');
-  if(s.uptimeMs!=null){if(uptimeMs&&s.uptimeMs<uptimeMs-5000){live=[];hist=[];loadHistory()}uptimeMs=s.uptimeMs}
+  if(s.uptimeMs!=null){if(uptimeMs&&s.uptimeMs<uptimeMs-5000){live=[];hist=[];wallOff=null;loadHistory()}uptimeMs=s.uptimeMs}
+  if(s.tzOffsetMinutes!=null)tzOffMin=s.tzOffsetMinutes;
+  if(s.timeSynced&&s.epochSeconds&&wallOff==null){wallOff=s.epochSeconds-uptimeMs/1000;live.forEach(p=>{p.wall=p.ts+wallOff})}
   const ts=uptimeMs/1000,t=+s.air.temperatureC,r=+s.air.relativeHumidity;
   if(Number.isFinite(t)&&Number.isFinite(r)){
     const last=live[live.length-1];
-    if(!last||ts-last.ts>=5){live.push({ts,t,r});if(live.length>3200)live.shift()}
+    if(!last||ts-last.ts>=5){live.push({ts,t,r,wall:wallOff==null?null:ts+wallOff});if(live.length>3200)live.shift()}
   }
   $('lgTemp').textContent=Number.isFinite(t)?t.toFixed(1)+' °C':'—';
   $('lgRh').textContent=Number.isFinite(r)?r.toFixed(1)+' %':'—';
+  $('syncStatus').textContent=wallOff!=null
+    ?'Время синхронизировано (NTP) · '+fmtTz()+'.'
+    :(s.ntpEnabled===false
+      ?'Синхронизация времени отключена — метки времени относительные.'
+      :'Часы не синхронизированы — метки времени относительные ('+fmtTz()+').');
   draw();
 }
 
@@ -60,6 +80,8 @@ function timeStep(sec){const steps=[30,60,120,300,600,900,1800,3600,7200,10800,2
 
 function fmtAxis(sec){if(sec<=0)return 'сейчас';if(sec<60)return '−'+Math.round(sec)+' с';if(sec<3600)return '−'+Math.round(sec/60)+' мин';const h=Math.floor(sec/3600),m=Math.round(sec%3600/60);return m?'−'+h+' ч '+m+' мин':'−'+h+' ч'}
 
+function fmtWallAxis(sec,step){const d=new Date((sec+tzOffMin*60)*1000);if(step>=86400)return pad2(d.getUTCDate())+'.'+pad2(d.getUTCMonth()+1);const hm=pad2(d.getUTCHours())+':'+pad2(d.getUTCMinutes());return step>=3600?pad2(d.getUTCDate())+'.'+pad2(d.getUTCMonth()+1)+' '+hm:hm}
+
 function series(){const lastHist=hist.length?hist[hist.length-1].ts:-1;return hist.concat(live.filter(p=>p.ts>lastHist))}
 
 function draw(){
@@ -67,9 +89,12 @@ function draw(){
   c.width=w*d;c.height=h*d;x.setTransform(d,0,0,d,0,0);x.clearRect(0,0,w,h);
   const ML=46,MR=46,MT=10,MB=24,pw=w-ML-MR,ph=h-MT-MB;
   const data=series();
-  const tNow=Math.max(uptimeMs/1000,data.length?data[data.length-1].ts:0);
-  const t0=tNow-rangeSec;
-  const view=data.filter(p=>p.ts>=t0-60);
+  // Wall-clock mode: every visible sample is anchored to real time via NTP.
+  const wallMode=wallOff!=null&&data.length>0&&data.every(p=>p.wall!=null);
+  const keyOf=p=>wallMode?p.wall:p.ts;
+  const nowKey=wallMode?uptimeMs/1000+wallOff:Math.max(uptimeMs/1000,data.length?keyOf(data[data.length-1]):0);
+  const k0=nowKey-rangeSec;
+  const view=data.filter(p=>keyOf(p)>=k0-60);
   x.font='11px system-ui';
   let tMin=Infinity,tMax=-Infinity;
   view.forEach(p=>{if(p.t<tMin)tMin=p.t;if(p.t>tMax)tMax=p.t});
@@ -78,8 +103,8 @@ function draw(){
   tMin=Math.floor(tMin);tMax=Math.ceil(tMax);
   const yT=v=>MT+ph-(v-tMin)/(tMax-tMin)*ph;
   const yH=v=>MT+ph-v/100*ph;
-  const tsX=ts=>ML+(ts-t0)/rangeSec*pw;
-  geom={ML,MR,pw,ph,t0,tNow};
+  const pxOf=key=>ML+(key-k0)/rangeSec*pw;
+  geom={ML,MR,pw,k0,nowKey};
   x.textBaseline='middle';x.strokeStyle='#1d2836';x.lineWidth=1;
   x.fillStyle=C_T;x.textAlign='right';
   niceTicks(tMin,tMax,5).forEach(v=>{const y=yT(v);if(y<MT-1||y>MT+ph+1)return;x.beginPath();x.moveTo(ML,y);x.lineTo(w-MR,y);x.stroke();x.fillText(v.toFixed(0),ML-7,y)});
@@ -87,37 +112,47 @@ function draw(){
   [0,25,50,75,100].forEach(v=>{const y=yH(v);if(y<MT-1||y>MT+ph+1)return;x.fillText(String(v),w-MR+7,y)});
   x.fillStyle='#8fa2b5';x.textAlign='center';x.textBaseline='top';
   const step=timeStep(rangeSec);
-  for(let k=Math.floor(rangeSec/step);k>=1;k--){
-    const ts=tNow-k*step,px=tsX(ts);
-    x.strokeStyle='#1d2836';x.beginPath();x.moveTo(px,MT);x.lineTo(px,MT+ph);x.stroke();
-    x.fillText(fmtAxis(k*step),px,MT+ph+7);
+  if(wallMode){
+    for(let tk=Math.floor(k0/step)*step;tk<=nowKey;tk+=step){
+      const px=pxOf(tk);
+      x.strokeStyle='#1d2836';x.beginPath();x.moveTo(px,MT);x.lineTo(px,MT+ph);x.stroke();
+      if(px<=w-MR-34)x.fillText(fmtWallAxis(tk,step),px,MT+ph+7);
+    }
+  }else{
+    for(let k=Math.floor(rangeSec/step);k>=1;k--){
+      const px=pxOf(nowKey-k*step);
+      x.strokeStyle='#1d2836';x.beginPath();x.moveTo(px,MT);x.lineTo(px,MT+ph);x.stroke();
+      x.fillText(fmtAxis(k*step),px,MT+ph+7);
+    }
   }
   x.fillText('сейчас',w-MR,MT+ph+7);
   if(view.length>1){
     [['t',C_T,v=>yT(v)],['r',C_H,v=>yH(v)]].forEach(([key,color,yv])=>{
       x.strokeStyle=color;x.lineWidth=1.7;x.lineJoin='round';x.beginPath();
-      view.forEach((p,i)=>{const px=tsX(p.ts),py=yv(p[key]);i?x.lineTo(px,py):x.moveTo(px,py)});
+      view.forEach((p,i)=>{const px=pxOf(keyOf(p)),py=yv(p[key]);i?x.lineTo(px,py):x.moveTo(px,py)});
       x.stroke();
     });
     x.lineWidth=1;
   }
-  let tsTarget=null;
-  if(pinned)tsTarget=pinTs;
-  else if(hoverX!=null&&hoverX>=ML&&hoverX<=w-MR)tsTarget=t0+(hoverX-ML)/pw*rangeSec;
-  drawHover(x,w,h,ML,MR,MT,MB,pw,ph,t0,tNow,yT,yH,view,tsTarget);
+  let keyTarget=null;
+  if(pinned)keyTarget=pinTs;
+  else if(hoverX!=null&&hoverX>=ML&&hoverX<=w-MR)keyTarget=k0+(hoverX-ML)/pw*rangeSec;
+  drawHover(x,w,h,ML,MR,MT,MB,pw,ph,nowKey,yT,yH,view,keyTarget,keyOf,pxOf,wallMode);
 }
 
-function drawHover(x,w,h,ML,MR,MT,MB,pw,ph,t0,tNow,yT,yH,view,tsTarget){
+function drawHover(x,w,h,ML,MR,MT,MB,pw,ph,nowKey,yT,yH,view,keyTarget,keyOf,pxOf,wallMode){
   const tip=$('chartTip');
-  if(tsTarget==null||tsTarget<t0-60||!view.length){tip.hidden=true;return}
+  if(keyTarget==null||keyTarget<nowKey-rangeSec-60||!view.length){tip.hidden=true;return}
   let best=null,bd=Infinity;
-  view.forEach(p=>{const dd=Math.abs(p.ts-tsTarget);if(dd<bd){bd=dd;best=p}});
+  view.forEach(p=>{const dd=Math.abs(keyOf(p)-keyTarget);if(dd<bd){bd=dd;best=p}});
   if(!best||bd>120){tip.hidden=true;return}
-  const cx=ML+(best.ts-t0)/rangeSec*pw;
+  const cx=pxOf(keyOf(best));
   x.strokeStyle='#4a5d77';x.setLineDash([4,4]);x.beginPath();x.moveTo(cx,MT);x.lineTo(cx,MT+ph);x.stroke();x.setLineDash([]);
   [[yT(best.t),C_T],[yH(best.r),C_H]].forEach(pair=>{x.fillStyle=pair[1];x.beginPath();x.arc(cx,pair[0],3.5,0,7);x.fill()});
+  const ago=fmtAgo(nowKey-keyOf(best));
+  const when=(wallMode&&best.wall!=null)?fmtWall(best.wall,true)+' ('+fmtTz()+') · '+ago:ago;
   tip.hidden=false;
-  tip.innerHTML='<div class="tt-time">'+fmtAgo(tNow-best.ts)+'</div>'
+  tip.innerHTML='<div class="tt-time">'+when+'</div>'
     +'<div class="row"><span><i style="background:'+C_T+'"></i>Температура</span><b>'+best.t.toFixed(1)+' °C</b></div>'
     +'<div class="row"><span><i style="background:'+C_H+'"></i>Влажность</span><b>'+best.r.toFixed(1)+' %</b></div>'
     +(pinned?'<div class="tt-pin">закреплено · клик по графику, чтобы скрыть</div>':'');
@@ -129,20 +164,40 @@ function drawHover(x,w,h,ML,MR,MT,MB,pw,ph,t0,tNow,yT,yH,view,tsTarget){
 async function loadHistory(){
   let text='';
   try{const r=await fetch('/api/history');if(r.ok)text=await r.text()}catch(e){}
-  const epochs=[[]];let prev=-1;
+  const runs=[[]];let prev=-1;
   text.split('\n').forEach(l=>{const s=l.trim();if(!s)return;let p;try{p=JSON.parse(s)}catch(e){return}
     if(!p||p.ts==null)return;
-    if(prev>=0&&p.ts<prev-60000)epochs.push([]);
-    epochs[epochs.length-1].push({ts:p.ts/1000,t:+p.t||0,r:+p.rh||0});
+    if(prev>=0&&p.ts<prev-60000)runs.push([]);
+    runs[runs.length-1].push({ts:p.ts/1000,t:+p.t||0,r:+p.rh||0,wall:p.epoch?+p.epoch:null});
     prev=p.ts});
-  hist=epochs[epochs.length-1]||[];
+  // Anchor each uptime-based run to the wall clock through its last record
+  // stamped by NTP, so old samples also display real timestamps.
+  hist=[].concat(...runs.map(run=>{
+    let anchor=null;run.forEach(p=>{if(p.wall!=null)anchor=p});
+    if(anchor){const off=anchor.wall-anchor.ts;run.forEach(p=>{p.wall=p.ts+off})}
+    return run;}));
   draw();
+}
+
+const eventTypeNames={run:'Запуск',stop:'Останов',pause:'Пауза',resume:'Продолжение',calibration:'Калибровка',config:'Конфигурация',ota:'OTA-обновление',reboot:'Перезагрузка',ntp:'Время'};
+
+function fmtEvents(text){
+  const out=[];
+  text.split('\n').forEach(l=>{const s=l.trim();if(!s)return;let ev;try{ev=JSON.parse(s)}catch(e){out.push(s);return}
+    if(!ev||ev.ts==null)return;
+    let when='—';
+    if(ev.epoch)when=fmtWall(ev.epoch,false);
+    else if(uptimeMs&&ev.ts<=uptimeMs)when=fmtAgo(uptimeMs/1000-ev.ts/1000);
+    out.push(when+' · '+(eventTypeNames[ev.type]||ev.type)+(ev.message?' — '+ev.message:''));
+  });
+  out.reverse();
+  return out.length?out.join('\n'):'Нет событий';
 }
 
 let evTick=0;
 async function refresh(){
   try{render(await request('/api/state'))}catch(e){$('connection').textContent='нет связи';$('connection').className='badge'}
-  try{if(evTick++%10===0){const e=await fetch('/api/events');$('events').textContent=e.ok?await e.text():'Нет событий'}}catch(e){}
+  try{if(evTick++%10===0){const e=await fetch('/api/events');$('events').textContent=e.ok?fmtEvents(await e.text()):'Нет событий'}}catch(e){}
   if(document.getElementById('tab-calibration').classList.contains('active'))refreshCal();
 }
 
@@ -213,7 +268,24 @@ $('saveWifi').onclick=()=>{
     .catch(e=>alert('Ошибка сохранения: '+e.message));
 };
 
-async function loadConfig(){try{const cfg=await request('/api/config');presets=cfg.presets||[];const sel=$('preset');sel.innerHTML='';presets.forEach(p=>{const o=document.createElement('option');o.value=p.id;o.textContent=p.name+' · '+p.temperatureC+'°C · '+Math.round(p.durationSeconds/3600)+' ч';sel.appendChild(o)});applyPreset();syncForm();$('wifiSsidManual').value=cfg.wifiSsid||'';$('webLogin').value=cfg.webLogin||'';$('secStatus').textContent=cfg.hasWebPassword?'Вход включён · логин: «'+(cfg.webLogin||'admin')+'»':'Вход отключён — панель открыта в локальной сети';}catch(e){}}
+$('saveTime').onclick=()=>{
+  const body={ntpEnabled:$('ntpEnabled').checked,tzOffsetMinutes:+$('timezone').value,ntpServer:$('ntpServer').value.trim()};
+  request('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(()=>{alert('Настройки времени сохранены. Синхронизация выполнится автоматически, когда устройство подключено к сети с доступом в интернет.')})
+    .catch(e=>alert('Ошибка сохранения: '+e.message));
+};
+
+function fillTimezones(){
+  const sel=$('timezone');sel.innerHTML='';
+  for(let m=-720;m<=840;m+=30){
+    const a=Math.abs(m),h=Math.floor(a/60),mm=a%60;
+    const o=document.createElement('option');o.value=m;
+    o.textContent='UTC'+(m<0?'−':'+')+h+(mm?':'+pad2(mm):'');
+    sel.appendChild(o);
+  }
+}
+
+async function loadConfig(){try{const cfg=await request('/api/config');presets=cfg.presets||[];const sel=$('preset');sel.innerHTML='';presets.forEach(p=>{const o=document.createElement('option');o.value=p.id;o.textContent=p.name+' · '+p.temperatureC+'°C · '+Math.round(p.durationSeconds/3600)+' ч';sel.appendChild(o)});applyPreset();syncForm();$('wifiSsidManual').value=cfg.wifiSsid||'';$('ntpEnabled').checked=cfg.ntpEnabled!==false;fillTimezones();$('timezone').value=String(cfg.tzOffsetMinutes!=null?cfg.tzOffsetMinutes:180);$('ntpServer').value=cfg.ntpServer||'';$('webLogin').value=cfg.webLogin||'';$('secStatus').textContent=cfg.hasWebPassword?'Вход включён · логин: «'+(cfg.webLogin||'admin')+'»':'Вход отключён — панель открыта в локальной сети';}catch(e){}}
 
 $('saveSecurity').onclick=()=>{
   const pw=$('webPassword').value;
@@ -239,8 +311,9 @@ chart.addEventListener('pointermove',e=>{hoverX=e.offsetX;if(!pinned)draw()});
 chart.addEventListener('pointerleave',()=>{if(!pinned){hoverX=null;draw()}});
 chart.addEventListener('pointerdown',e=>{
   if(!geom)return;
+  const key=geom.k0+(e.offsetX-geom.ML)/geom.pw*rangeSec;
   if(pinned){pinned=false;pinTs=null;hoverX=e.offsetX}
-  else{pinned=true;pinTs=geom.t0+(e.offsetX-geom.ML)/geom.pw*rangeSec;hoverX=e.offsetX}
+  else{pinned=true;pinTs=key;hoverX=e.offsetX}
   draw();
 });
 document.querySelectorAll('#rangebar .rg').forEach(b=>b.onclick=()=>{

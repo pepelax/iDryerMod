@@ -57,7 +57,7 @@
           <canvas id="chart" height="220"></canvas>
           <div id="chartTip" class="chart-tip" hidden></div>
         </div>
-        <p class="charthint">График строится по данным телеметрии с устройства (1 точка в минуту) и текущим измерениям. Метки времени отсчитываются от текущего момента.</p>
+        <p class="charthint"><span id="syncStatus">Статус времени: —</span> График строится по данным телеметрии с устройства (1 точка в минуту) и текущим измерениям.</p>
         <pre id="events">Загрузка…</pre>
       </section>
     </section>
@@ -71,6 +71,14 @@
         <label>Пароль Wi-Fi<input id="wifiPassword" type="password" maxlength="64" placeholder="пароль домашней сети"></label>
       </div>
       <div class="actions"><button id="scan">Поиск сетей</button><button class="primary" id="saveWifi">Сохранить и перезагрузить</button></div>
+      <h3>Часы</h3>
+      <div class="form">
+        <label class="check">Синхронизация времени по NTP<input id="ntpEnabled" type="checkbox" checked></label>
+        <label>Часовой пояс<select id="timezone"></select></label>
+        <label>NTP-сервер<input id="ntpServer" type="text" maxlength="47" placeholder="pool.ntp.org"></label>
+      </div>
+      <div class="actions"><button id="saveTime">Сохранить время</button></div>
+      <p class="netstatus">Часовой пояс задаётся сдвигом от UTC (шаг 30 минут). При включённой синхронизации и доступе в интернет устройство получает точное время от NTP-сервера; график истории и журнал событий показывают календарные метки в выбранном поясе.</p>
     </section>
 
     <section id="tab-security" class="tabbody panel">

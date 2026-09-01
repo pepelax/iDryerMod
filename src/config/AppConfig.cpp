@@ -7,6 +7,9 @@
 void setDefaultConfig(AppConfig& config) {
   std::memset(&config, 0, sizeof(config));
   std::strncpy(config.hostname, "dryer", sizeof(config.hostname) - 1);
+  config.ntpEnabled = true;
+  config.tzOffsetMinutes = 180;  // UTC+3
+  std::strncpy(config.ntpServer, "pool.ntp.org", sizeof(config.ntpServer) - 1);
   config.ntcR25Ohms = defaults::kNtcR25Ohms;
   config.ntcBeta = defaults::kNtcBeta;
   config.ntcDividerOhms = defaults::kNtcDividerOhms;

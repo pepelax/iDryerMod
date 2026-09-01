@@ -157,7 +157,15 @@ bool WebService::begin() {
   return true;
 }
 
-void WebService::update() { server_.handleClient(); }
+void WebService::update() {
+  server_.handleClient();
+  // Record the first successful NTP synchronization so the event journal
+  // shows when wall-clock stamps became available.
+  if (state_.timeSynced && !wasTimeSynced_) {
+    appendEvent("ntp", "time synchronized");
+  }
+  wasTimeSynced_ = state_.timeSynced;
+}
 
 void WebService::sendState() {
   StaticJsonDocument<1536> doc;
@@ -165,6 +173,10 @@ void WebService::sendState() {
   // Device uptime: the web chart aligns live samples with the telemetry
   // history, whose records are also stamped with millis().
   doc["uptimeMs"] = millis();
+  doc["timeSynced"] = state_.timeSynced;
+  doc["epochSeconds"] = state_.epochSeconds;
+  doc["tzOffsetMinutes"] = config_.tzOffsetMinutes;
+  doc["ntpEnabled"] = config_.ntpEnabled;
   doc["mode"] = modeName(state_.mode);
   doc["phase"] = phaseName(state_.phase);
   doc["fault"] = faultName(state_.fault);
@@ -221,6 +233,9 @@ void WebService::sendConfig() {
   // The password itself is never exposed; only whether one is configured.
   doc["webLogin"] = config_.webLogin;
   doc["hasWebPassword"] = config_.webPassword[0] != '\0';
+  doc["ntpEnabled"] = config_.ntpEnabled;
+  doc["tzOffsetMinutes"] = config_.tzOffsetMinutes;
+  doc["ntpServer"] = config_.ntpServer;
   doc["heaterMaxTemperatureC"] = config_.heaterMaxTemperatureC;
   doc["airMaxTemperatureC"] = config_.airMaxTemperatureC;
   doc["fanMinimumDuty"] = config_.fanMinimumDuty;
@@ -461,6 +476,20 @@ void WebService::saveConfig() {
     strlcpy(config_.webPassword, doc["webPassword"] | "",
             sizeof(config_.webPassword));
   }
+  // Time settings: NTP toggle, UTC offset in minutes and the NTP server.
+  if (doc.containsKey("ntpEnabled")) {
+    config_.ntpEnabled = doc["ntpEnabled"].as<bool>();
+  }
+  if (doc.containsKey("tzOffsetMinutes")) {
+    int offset = doc["tzOffsetMinutes"].as<int>();
+    // Clamp to UTC-12..UTC+14 and snap to 30-minute steps.
+    offset = std::max(-720, std::min(840, offset));
+    config_.tzOffsetMinutes = static_cast<int16_t>((offset / 30) * 30);
+  }
+  if (doc.containsKey("ntpServer")) {
+    strlcpy(config_.ntpServer, doc["ntpServer"] | "pool.ntp.org",
+            sizeof(config_.ntpServer));
+  }
   storage_.saveConfig(config_);
   if (weightsTouched) calibration_.syncSensors();
   appendEvent("config", "configuration changed");
@@ -531,6 +560,7 @@ void WebService::rebootCommand() {
 void WebService::appendEvent(const char* type, const char* message) {
   EventRecord event{};
   event.timestamp = millis();
+  event.epoch = state_.timeSynced ? state_.epochSeconds : 0;
   std::strncpy(event.type, type, sizeof(event.type) - 1);
   std::strncpy(event.message, message, sizeof(event.message) - 1);
   storage_.appendEvent(event);

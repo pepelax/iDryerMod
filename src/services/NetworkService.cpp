@@ -6,8 +6,17 @@
 #include <esp_idf_version.h>
 #include <esp_task_wdt.h>
 
+#if ESP_IDF_VERSION_MAJOR >= 5
+#include <esp_sntp.h>
+#else
+extern "C" {
+#include <lwip/apps/sntp.h>
+}
+#endif
+
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 
 namespace {
 // ArduinoOTA receives the whole image inside handle(), blocking the main
@@ -32,6 +41,50 @@ void rejoinWatchdog() {
 }  // namespace
 
 NetworkService::NetworkService(const AppConfig& config) : config_(config) {}
+
+void NetworkService::applyTimezone() {
+  // POSIX TZ offsets are inverted: "UTC-3" means local = UTC+3.
+  const int16_t off = config_.tzOffsetMinutes;
+  const uint16_t abs = static_cast<uint16_t>(off < 0 ? -off : off);
+  char tz[12];
+  if (abs % 60 == 0) {
+    std::snprintf(tz, sizeof(tz), "UTC%c%u", off >= 0 ? '-' : '+', abs / 60);
+  } else {
+    std::snprintf(tz, sizeof(tz), "UTC%c%u:%02u", off >= 0 ? '-' : '+',
+                  abs / 60, abs % 60);
+  }
+  setenv("TZ", tz, 1);
+  tzset();
+  appliedTzOff_ = off;
+  Serial.printf("[network] timezone: UTC%s%d\n", off >= 0 ? "+" : "",
+                static_cast<int>(off) / 60);
+}
+
+void NetworkService::syncNtpState(bool connected) {
+  const bool wanted =
+      connected && config_.ntpEnabled && config_.ntpServer[0] != '\0';
+  if (timeServiceStarted_ && !wanted) {
+    // Disabled or offline: stop polling so the clock no longer follows NTP.
+#if ESP_IDF_VERSION_MAJOR >= 5
+    if (esp_sntp_enabled()) esp_sntp_stop();
+#else
+    if (sntp_enabled()) sntp_stop();
+#endif
+    timeServiceStarted_ = false;
+    Serial.println("[network] NTP sync stopped");
+    return;
+  }
+  // SNTP retries on its own; (re)start only once per boot or after the
+  // configured server changes.
+  if (!wanted || (timeServiceStarted_ &&
+                  std::strcmp(appliedNtpServer_, config_.ntpServer) == 0)) {
+    return;
+  }
+  strlcpy(appliedNtpServer_, config_.ntpServer, sizeof(appliedNtpServer_));
+  configTime(0, 0, appliedNtpServer_, "time.google.com", "time.nist.gov");
+  timeServiceStarted_ = true;
+  Serial.printf("[network] NTP sync started via %s\n", appliedNtpServer_);
+}
 
 namespace {
 void publishAddress(DeviceState& state, bool apActive, const char* hostname,
@@ -61,6 +114,7 @@ void publishAddress(DeviceState& state, bool apActive, const char* hostname,
 
 bool NetworkService::begin(DeviceState& state) {
   WiFi.setHostname(config_.hostname);
+  applyTimezone();
   bool networkStarted = true;
   if (config_.wifiSsid[0] == '\0') {
     WiFi.mode(WIFI_AP_STA);
@@ -104,6 +158,23 @@ bool NetworkService::begin(DeviceState& state) {
 void NetworkService::update(DeviceState& state, uint32_t now) {
   ArduinoOTA.handle();
   const bool connected = WiFi.status() == WL_CONNECTED;
+  // Offset changes saved from the web panel or the device menu take effect
+  // without a reboot.
+  if (appliedTzOff_ != config_.tzOffsetMinutes) {
+    applyTimezone();
+  }
+  syncNtpState(connected);
+  // A freshly booted ESP32 has no wall clock: epoch 0 (1970) means the SNTP
+  // exchange has not succeeded yet.
+  const time_t wallClock = time(nullptr);
+  const bool timeSynced = wallClock > 1600000000L;
+  if (timeSynced && !state.timeSynced) {
+    Serial.printf("[network] NTP time synchronized: %s", ctime(&wallClock));
+  }
+  state.timeSynced = timeSynced;
+  if (timeSynced) {
+    state.epochSeconds = static_cast<uint32_t>(wallClock);
+  }
   if (connected) {
     lastConnectedAt_ = now;
     // Once the station is back online the fallback setup AP is no longer

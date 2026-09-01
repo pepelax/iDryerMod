@@ -52,13 +52,17 @@ function render(s){
   if(s.uptimeMs!=null){if(uptimeMs&&s.uptimeMs<uptimeMs-5000){live=[];hist=[];wallOff=null;loadHistory()}uptimeMs=s.uptimeMs}
   if(s.tzOffsetMinutes!=null)tzOffMin=s.tzOffsetMinutes;
   if(s.timeSynced&&s.epochSeconds&&wallOff==null){wallOff=s.epochSeconds-uptimeMs/1000;live.forEach(p=>{p.wall=p.ts+wallOff})}
-  const ts=uptimeMs/1000,t=+s.air.temperatureC,r=+s.air.relativeHumidity;
-  if(Number.isFinite(t)&&Number.isFinite(r)){
+  const ts=uptimeMs/1000;
+  const t=Number.isFinite(+s.air.temperatureC)?+s.air.temperatureC:null;
+  const r=Number.isFinite(+s.air.relativeHumidity)?+s.air.relativeHumidity:null;
+  const n=s.heater&&s.heater.valid!==false&&Number.isFinite(+s.heater.temperatureC)?+s.heater.temperatureC:null;
+  if(t!=null||r!=null||n!=null){
     const last=live[live.length-1];
-    if(!last||ts-last.ts>=5){live.push({ts,t,r,wall:wallOff==null?null:ts+wallOff});if(live.length>3200)live.shift()}
+    if(!last||ts-last.ts>=5){live.push({ts,t,r,n,wall:wallOff==null?null:ts+wallOff});if(live.length>3200)live.shift()}
   }
-  $('lgTemp').textContent=Number.isFinite(t)?t.toFixed(1)+' °C':'—';
-  $('lgRh').textContent=Number.isFinite(r)?r.toFixed(1)+' %':'—';
+  $('lgTemp').textContent=t!=null?t.toFixed(1)+' °C':'—';
+  $('lgRh').textContent=r!=null?r.toFixed(1)+' %':'—';
+  $('lgNtc').textContent=n!=null?n.toFixed(1)+' °C':'—';
   $('syncStatus').textContent=wallOff!=null
     ?'Время синхронизировано (NTP) · '+fmtTz()+'.'
     :(s.ntpEnabled===false
@@ -67,7 +71,7 @@ function render(s){
   draw();
 }
 
-const C_T='#55d6be',C_H='#ffbd69';
+const C_T='#55d6be',C_H='#ffbd69',C_N='#ff6b7a';
 
 function niceTicks(min,max,count){
   const span=(max-min)||1,raw=span/count,mag=Math.pow(10,Math.floor(Math.log10(raw))),norm=raw/mag;
@@ -97,7 +101,7 @@ function draw(){
   const view=data.filter(p=>keyOf(p)>=k0-60);
   x.font='11px system-ui';
   let tMin=Infinity,tMax=-Infinity;
-  view.forEach(p=>{if(p.t<tMin)tMin=p.t;if(p.t>tMax)tMax=p.t});
+  view.forEach(p=>{[p.t,p.n].forEach(v=>{if(v!=null){if(v<tMin)tMin=v;if(v>tMax)tMax=v}})});
   if(!view.length){tMin=0;tMax=40}
   if(tMax-tMin<5){const m=(tMax+tMin)/2;tMin=m-2.5;tMax=m+2.5}
   tMin=Math.floor(tMin);tMax=Math.ceil(tMax);
@@ -127,9 +131,12 @@ function draw(){
   }
   x.fillText('сейчас',w-MR,MT+ph+7);
   if(view.length>1){
-    [['t',C_T,v=>yT(v)],['r',C_H,v=>yH(v)]].forEach(([key,color,yv])=>{
+    [['t',C_T,v=>yT(v)],['n',C_N,v=>yT(v)],['r',C_H,v=>yH(v)]].forEach(([key,color,yv])=>{
       x.strokeStyle=color;x.lineWidth=1.7;x.lineJoin='round';x.beginPath();
-      view.forEach((p,i)=>{const px=pxOf(keyOf(p)),py=yv(p[key]);i?x.lineTo(px,py):x.moveTo(px,py)});
+      let started=false;
+      view.forEach(p=>{const v=p[key];if(v==null){started=false;return}
+        const px=pxOf(keyOf(p)),py=yv(v);
+        if(started)x.lineTo(px,py);else{x.moveTo(px,py);started=true}});
       x.stroke();
     });
     x.lineWidth=1;
@@ -148,16 +155,22 @@ function drawHover(x,w,h,ML,MR,MT,MB,pw,ph,nowKey,yT,yH,view,keyTarget,keyOf,pxO
   if(!best||bd>120){tip.hidden=true;return}
   const cx=pxOf(keyOf(best));
   x.strokeStyle='#4a5d77';x.setLineDash([4,4]);x.beginPath();x.moveTo(cx,MT);x.lineTo(cx,MT+ph);x.stroke();x.setLineDash([]);
-  [[yT(best.t),C_T],[yH(best.r),C_H]].forEach(pair=>{x.fillStyle=pair[1];x.beginPath();x.arc(cx,pair[0],3.5,0,7);x.fill()});
+  const marks=[];
+  if(best.t!=null)marks.push([yT(best.t),C_T]);
+  if(best.n!=null)marks.push([yT(best.n),C_N]);
+  if(best.r!=null)marks.push([yH(best.r),C_H]);
+  marks.forEach(pair=>{x.fillStyle=pair[1];x.beginPath();x.arc(cx,pair[0],3.5,0,7);x.fill()});
+  const anchorY=best.t!=null?yT(best.t):(best.n!=null?yT(best.n):MT+ph/2);
   const ago=fmtAgo(nowKey-keyOf(best));
   const when=(wallMode&&best.wall!=null)?fmtWall(best.wall,true)+' ('+fmtTz()+') · '+ago:ago;
   tip.hidden=false;
   tip.innerHTML='<div class="tt-time">'+when+'</div>'
-    +'<div class="row"><span><i style="background:'+C_T+'"></i>Температура</span><b>'+best.t.toFixed(1)+' °C</b></div>'
-    +'<div class="row"><span><i style="background:'+C_H+'"></i>Влажность</span><b>'+best.r.toFixed(1)+' %</b></div>'
+    +'<div class="row"><span><i style="background:'+C_T+'"></i>Температура</span><b>'+(best.t!=null?best.t.toFixed(1)+' °C':'—')+'</b></div>'
+    +'<div class="row"><span><i style="background:'+C_N+'"></i>Нагреватель</span><b>'+(best.n!=null?best.n.toFixed(1)+' °C':'—')+'</b></div>'
+    +'<div class="row"><span><i style="background:'+C_H+'"></i>Влажность</span><b>'+(best.r!=null?best.r.toFixed(1)+' %':'—')+'</b></div>'
     +(pinned?'<div class="tt-pin">закреплено · клик по графику, чтобы скрыть</div>':'');
   const tw=tip.offsetWidth,th=tip.offsetHeight;
-  let lx=cx+13;if(lx+tw>w-4)lx=cx-tw-13;let ly=Math.max(4,Math.min(h-th-4,yT(best.t)-th/2));
+  let lx=cx+13;if(lx+tw>w-4)lx=cx-tw-13;let ly=Math.max(4,Math.min(h-th-4,anchorY-th/2));
   tip.style.left=lx+'px';tip.style.top=ly+'px';
 }
 
@@ -165,10 +178,11 @@ async function loadHistory(){
   let text='';
   try{const r=await fetch('/api/history');if(r.ok)text=await r.text()}catch(e){}
   const runs=[[]];let prev=-1;
+  const num=v=>v==null?null:(Number.isFinite(+v)?+v:null);
   text.split('\n').forEach(l=>{const s=l.trim();if(!s)return;let p;try{p=JSON.parse(s)}catch(e){return}
     if(!p||p.ts==null)return;
     if(prev>=0&&p.ts<prev-60000)runs.push([]);
-    runs[runs.length-1].push({ts:p.ts/1000,t:+p.t||0,r:+p.rh||0,wall:p.epoch?+p.epoch:null});
+    runs[runs.length-1].push({ts:p.ts/1000,t:num(p.t),r:num(p.rh),n:num(p.ntc),wall:p.epoch?+p.epoch:null});
     prev=p.ts});
   // Anchor each uptime-based run to the wall clock through its last record
   // stamped by NTP, so old samples also display real timestamps.

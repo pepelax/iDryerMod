@@ -19,6 +19,7 @@ class Sh1106Display final : public IDisplay {
   void renderCalibrationMenu(const UiState& ui);
   void renderScaleSetup(const DeviceState& state, const UiState& ui);
   void renderDriftConfirm(const UiState& ui);
+  void renderWifiSetup(const DeviceState& state, const UiState& ui);
   void renderCalProgress(const DeviceState& state);
   void renderActive(const DeviceState& state);
   void renderFault(const DeviceState& state);

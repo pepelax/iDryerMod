@@ -116,13 +116,22 @@ from the watchdog (ArduinoOTA receives the image inside a blocking
 
 ## First start
 
-1. With no saved Wi-Fi credentials the device opens the
-   `FilamentDryer-Setup` access point — connect and configure your network
-   through the web panel. If the station cannot join for 60 s, the setup AP
-   comes back automatically.
-2. On the home network the panel is reachable at `http://dryer.local`
+1. The setup hotspot is never opened automatically: a device without saved
+   Wi-Fi credentials (or with an unreachable router) simply stays offline and
+   keeps working standalone from the screen and the encoder.
+2. To configure Wi-Fi open the main menu, pick `WIFI SETUP` and select
+   `Start`. The device raises a WPA2-protected hotspot (SSID
+   `dryer-setup-XXXX`, where XXXX identifies the unit) with a random password
+   shown on the display and the serial console. The hotspot closes itself
+   after 10 minutes; picking `Start` again restarts the window. Connect to
+   the hotspot and configure your home network through the web panel at
+   `http://192.168.4.1`.
+3. Headless fallback: if the display or the encoder is dead, hold the encoder
+   button while powering on — the hotspot comes up and its password is
+   printed on the serial console.
+4. On the home network the panel is reachable at `http://dryer.local`
    (mDNS; the IP is also shown on the display).
-3. Authentication is optional: an empty web password disables it. When set,
+5. Authentication is optional: an empty web password disables it. When set,
    the login defaults to `admin` (configurable) and the same password also
    protects ArduinoOTA. Set a password before powering the heater side.
 

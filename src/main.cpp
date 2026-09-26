@@ -55,8 +55,8 @@ CalibrationService calibration(appConfig, stateMachine, storage, weightOne,
                                weightTwo);
 Sh1106Display display(board::kDisplayAddress);
 RotaryEncoderInput input(board::kEncoderA, board::kEncoderB, board::kButton);
-UiService ui(display, input, stateMachine, calibration, appConfig);
 NetworkService network(appConfig);
+UiService ui(display, input, stateMachine, calibration, network, appConfig);
 WebService web(deviceState, appConfig, stateMachine, storage, calibration);
 
 uint32_t lastSensors = 0;
@@ -97,7 +97,21 @@ void setup() {
                   static_cast<uint8_t>(heaterFanFloor));
   const bool sensorsOk = sensors.begin();
   const bool uiOk = ui.begin();
+  // Headless fallback: holding the encoder button through power-on raises
+  // the setup hotspot even when the display or the encoder itself is dead.
+  // The WPA2 credentials are printed on the serial console; the screen also
+  // shows them when it still works.
+  bool setupButtonHeld = false;
+  if (digitalRead(board::kButton) == LOW) {
+    delay(60);
+    setupButtonHeld = digitalRead(board::kButton) == LOW;
+  }
   const bool networkOk = network.begin(deviceState);
+  if (setupButtonHeld) {
+    Serial.println("[boot] setup button held: raising setup hotspot");
+    network.requestSetupAp(deviceState, millis());
+    ui.showWifiSetup();
+  }
   const bool webOk = web.begin();
   Serial.printf("[boot] storage=%s sensors=%s ui=%s network=%s web=%s\n",
                 storageOk ? "OK" : "FAILED", sensorsOk ? "OK" : "MISSING",

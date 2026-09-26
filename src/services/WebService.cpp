@@ -184,6 +184,8 @@ void WebService::sendState() {
   doc["remainingSeconds"] = state_.remainingSeconds;
   doc["wifiConnected"] = state_.wifiConnected;
   doc["apActive"] = state_.apActive;
+  doc["apSsid"] = state_.apSsid;
+  doc["apRemainingSeconds"] = state_.apRemainingSeconds;
   doc["ip"] = state_.ipAddress;
   doc["hostname"] = config_.hostname;
   doc["setpoints"]["airTemperatureC"] = state_.setpoints.airTemperatureC;

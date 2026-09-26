@@ -6,6 +6,8 @@
 #include <esp_idf_version.h>
 #include <esp_task_wdt.h>
 
+#include "config/Defaults.h"
+
 #if ESP_IDF_VERSION_MAJOR >= 5
 #include <esp_sntp.h>
 #else
@@ -17,6 +19,8 @@ extern "C" {
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+
+#include <esp_system.h>
 
 namespace {
 // ArduinoOTA receives the whole image inside handle(), blocking the main
@@ -110,24 +114,26 @@ void publishAddress(DeviceState& state, bool apActive, const char* hostname,
     state.webAddress[0] = '\0';
   }
 }
+
+// Unambiguous alphabet for the on-screen password: no 0/O/1/I/L.
+constexpr char kApPasswordAlphabet[] = "23456789abcdefghjkmnpqrstuvwxyz";
+constexpr uint8_t kApPasswordLength = 8;
 }  // namespace
 
 bool NetworkService::begin(DeviceState& state) {
   WiFi.setHostname(config_.hostname);
   applyTimezone();
-  bool networkStarted = true;
-  if (config_.wifiSsid[0] == '\0') {
-    WiFi.mode(WIFI_AP_STA);
-    networkStarted = WiFi.softAP("FilamentDryer-Setup");
-    apActive_ = networkStarted;
-    Serial.printf("[network] setup AP: %s, IP: %s\n",
-                  networkStarted ? "FilamentDryer-Setup" : "FAILED",
-                  WiFi.softAPIP().toString().c_str());
-  } else {
+  // The setup hotspot is never raised automatically: a device without saved
+  // credentials (or with an unreachable router) simply stays offline and
+  // works standalone. The hotspot is opened manually from the menu or by
+  // holding the encoder button through power-on.
+  if (config_.wifiSsid[0] != '\0') {
     WiFi.mode(WIFI_STA);
     WiFi.begin(config_.wifiSsid, config_.wifiPassword);
-    staStartedAt_ = millis();
     Serial.printf("[network] connecting to SSID: %s\n", config_.wifiSsid);
+  } else {
+    WiFi.mode(WIFI_OFF);
+    Serial.println("[network] no saved SSID, radio off");
   }
   publishAddress(state, apActive_, config_.hostname, mdnsStarted_);
   state.apActive = apActive_;
@@ -152,7 +158,7 @@ bool NetworkService::begin(DeviceState& state) {
   });
   ArduinoOTA.begin();
   Serial.printf("[network] OTA hostname: %s\n", config_.hostname);
-  return networkStarted;
+  return true;
 }
 
 void NetworkService::update(DeviceState& state, uint32_t now) {
@@ -175,18 +181,6 @@ void NetworkService::update(DeviceState& state, uint32_t now) {
   if (timeSynced) {
     state.epochSeconds = static_cast<uint32_t>(wallClock);
   }
-  if (connected) {
-    lastConnectedAt_ = now;
-    // Once the station is back online the fallback setup AP is no longer
-    // needed; keep the air clean and drop it.
-    if (apActive_) {
-      WiFi.softAPdisconnect(true);
-      WiFi.mode(WIFI_STA);
-      apActive_ = false;
-      publishAddress(state, apActive_, config_.hostname, mdnsStarted_);
-      Serial.println("[network] station online, setup AP stopped");
-    }
-  }
   if (!connectionStateKnown_ || connected != wasConnected_) {
     if (connected) {
       Serial.printf("[network] connected, IP: %s\n",
@@ -197,16 +191,15 @@ void NetworkService::update(DeviceState& state, uint32_t now) {
     connectionStateKnown_ = true;
     wasConnected_ = connected;
   }
-  // If the station cannot join for a while (bad password, missing network),
-  // raise the setup AP so the dryer stays reachable for reconfiguration.
-  if (!connected && !apActive_ && config_.wifiSsid[0] != '\0') {
-    const uint32_t since = lastConnectedAt_ != 0 ? lastConnectedAt_ : staStartedAt_;
-    if (since != 0 && static_cast<uint32_t>(now - since) >= 60000UL) {
-      WiFi.mode(WIFI_AP_STA);
-      apActive_ = WiFi.softAP("FilamentDryer-Setup");
-      publishAddress(state, apActive_, config_.hostname, mdnsStarted_);
-      Serial.printf("[network] station failed, setup AP started: %s\n",
-                    apActive_ ? "OK" : "FAILED");
+  // The setup hotspot lives only for its manually requested window; when it
+  // expires the device goes back to station-only (or radio-off) operation.
+  if (apActive_) {
+    if (static_cast<int32_t>(now - apWindowEndsAt_) >= 0) {
+      Serial.println("[network] setup AP window expired");
+      stopSetupAp(state);
+    } else {
+      state.apRemainingSeconds = static_cast<uint16_t>(
+          (apWindowEndsAt_ - now) / 1000UL);
     }
   }
   if (connected && !mdnsStarted_) {
@@ -231,4 +224,76 @@ void NetworkService::update(DeviceState& state, uint32_t now) {
     lastReconnectAt_ = now;
   }
   state.wifiConnected = connected;
+}
+
+void NetworkService::startSetupAp(DeviceState& state, uint32_t now) {
+  // Per-boot random password: regenerated only on reboot so a re-request
+  // while the hotspot is already up keeps the credentials the user sees.
+  if (apPassword_[0] == '\0') {
+    for (uint8_t i = 0; i < kApPasswordLength; ++i) {
+      apPassword_[i] = kApPasswordAlphabet[esp_random() %
+                                           (sizeof(kApPasswordAlphabet) - 1)];
+    }
+    apPassword_[kApPasswordLength] = '\0';
+  }
+  // Short unique SSID: first characters of the hostname plus four hex digits
+  // of the unit MAC, so several dryers can be told apart in the Wi-Fi list.
+  char host[6];
+  strlcpy(host, config_.hostname, sizeof(host));
+  if (host[0] == '\0') strlcpy(host, "dryer", sizeof(host));
+  char ssid[24];
+  const uint16_t unitId =
+      static_cast<uint16_t>((ESP.getEfuseMac() >> 32) & 0xFFFFULL);
+  std::snprintf(ssid, sizeof(ssid), "%s-setup-%04X", host, unitId);
+  // AP+STA keeps the station link alive while the hotspot is open.
+  WiFi.mode(WIFI_AP_STA);
+  apActive_ = WiFi.softAP(ssid, apPassword_);
+  apWindowEndsAt_ = now + defaults::kSetupApWindowMs;
+  if (apActive_) {
+    strlcpy(state.apSsid, ssid, sizeof(state.apSsid));
+    strlcpy(state.apPassword, apPassword_, sizeof(state.apPassword));
+    strlcpy(state.apAddress, WiFi.softAPIP().toString().c_str(),
+            sizeof(state.apAddress));
+    state.apRemainingSeconds = defaults::kSetupApWindowMs / 1000UL;
+    Serial.printf("[network] setup AP up: SSID %s, password %s, IP %s\n",
+                  ssid, apPassword_, state.apAddress);
+  } else {
+    state.apSsid[0] = '\0';
+    state.apPassword[0] = '\0';
+    state.apAddress[0] = '\0';
+    state.apRemainingSeconds = 0;
+    Serial.println("[network] setup AP start FAILED");
+  }
+  publishAddress(state, apActive_, config_.hostname, mdnsStarted_);
+  state.apActive = apActive_;
+}
+
+void NetworkService::requestSetupAp(DeviceState& state, uint32_t now) {
+  if (apActive_) {
+    // Already up: restart the window so the user gets a fresh countdown.
+    apWindowEndsAt_ = now + defaults::kSetupApWindowMs;
+    state.apRemainingSeconds = defaults::kSetupApWindowMs / 1000UL;
+    Serial.println("[network] setup AP window restarted");
+    return;
+  }
+  startSetupAp(state, now);
+}
+
+void NetworkService::stopSetupAp(DeviceState& state) {
+  if (!apActive_) return;
+  WiFi.softAPdisconnect(true);
+  // Back to station-only when a network is configured, radio off otherwise.
+  if (config_.wifiSsid[0] != '\0') {
+    WiFi.mode(WIFI_STA);
+  } else {
+    WiFi.mode(WIFI_OFF);
+  }
+  apActive_ = false;
+  state.apSsid[0] = '\0';
+  state.apPassword[0] = '\0';
+  state.apAddress[0] = '\0';
+  state.apRemainingSeconds = 0;
+  publishAddress(state, apActive_, config_.hostname, mdnsStarted_);
+  state.apActive = apActive_;
+  Serial.println("[network] setup AP stopped");
 }

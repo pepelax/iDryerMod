@@ -6,13 +6,18 @@
 #include "core/DryingStateMachine.h"
 #include "domain/Interfaces.h"
 #include "services/CalibrationService.h"
+#include "services/NetworkService.h"
 
 class UiService {
  public:
   UiService(IDisplay& display, IInput& input, DryingStateMachine& stateMachine,
-            CalibrationService& calibration, const AppConfig& config);
+            CalibrationService& calibration, NetworkService& network,
+            const AppConfig& config);
   bool begin();
   void update(DeviceState& state, uint32_t now);
+  // Opens the Wi-Fi setup screen directly (used by the power-on button
+  // fallback so the hotspot credentials land on the display).
+  void showWifiSetup();
 
  private:
   void handleRotation(int32_t detents);
@@ -37,6 +42,7 @@ class UiService {
   IInput& input_;
   DryingStateMachine& stateMachine_;
   CalibrationService& calibration_;
+  NetworkService& network_;
   const AppConfig& config_;
   UiState ui_;
   int32_t encoderRemainder_ = 0;

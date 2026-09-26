@@ -58,6 +58,9 @@ constexpr uint16_t kKnownWeightStepG = 25;
 constexpr uint16_t kKnownWeightMinG = 25;
 constexpr uint16_t kKnownWeightMaxG = 5000;
 constexpr uint32_t kWebPollPeriodMs = 1000;
+// The manually raised setup hotspot closes itself after this window; opening
+// it again from the menu (or holding the button at boot) restarts the timer.
+constexpr uint32_t kSetupApWindowMs = 600000;
 constexpr uint32_t kDiagnosticsPeriodMs = 5000;
 constexpr uint32_t kWatchdogTimeoutSeconds = 5;
 constexpr uint8_t kWeightFilterSize = 8;

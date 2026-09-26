@@ -47,8 +47,8 @@ function render(s){
   $('weightTotal').textContent=Number(s.weights.total).toFixed(0);
   $('pause').textContent=s.phase==='paused'?'Продолжить':'Пауза';
   $('netStatus').textContent=s.apActive
-    ?'Режим настройки: точка доступа FilamentDryer-Setup, веб-панель по адресу '+(s.ip||'192.168.4.1')+'. Задайте домашнюю сеть ниже.'
-    :(s.wifiConnected?'Wi-Fi подключён · адрес: '+((s.hostname||'dryer')+'.local')+(s.ip?' ('+s.ip+')':''):'Wi-Fi не подключён');
+    ?'Горячая точка настройки '+(s.apSsid||'')+' активна, панель по адресу '+(s.ip||'192.168.4.1')+(s.apRemainingSeconds?' · закроется через '+Math.ceil(s.apRemainingSeconds/60)+' мин':'')+'. Задайте домашнюю сеть ниже.'
+    :(s.wifiConnected?'Wi-Fi подключён · адрес: '+((s.hostname||'dryer')+'.local')+(s.ip?' ('+s.ip+')':''):'Wi-Fi не подключён · точку настройки можно открыть из меню устройства');
   if(s.uptimeMs!=null){if(uptimeMs&&s.uptimeMs<uptimeMs-5000){live=[];hist=[];wallOff=null;loadHistory()}uptimeMs=s.uptimeMs}
   if(s.tzOffsetMinutes!=null)tzOffMin=s.tzOffsetMinutes;
   if(s.timeSynced&&s.epochSeconds&&wallOff==null){wallOff=s.epochSeconds-uptimeMs/1000;live.forEach(p=>{p.wall=p.ts+wallOff})}

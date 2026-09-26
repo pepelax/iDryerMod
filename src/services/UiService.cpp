@@ -11,22 +11,28 @@ namespace {
 uint8_t mainMenuRowCount() {
   size_t presetCount = 0;
   defaultPresets(presetCount);
-  // presets + MANUAL + CONTINUOUS + CALIB + BACK
-  return static_cast<uint8_t>(presetCount + 4);
+  // presets + MANUAL + CONTINUOUS + CALIB + WIFI + BACK
+  return static_cast<uint8_t>(presetCount + 5);
 }
 }  // namespace
 
 UiService::UiService(IDisplay& display, IInput& input,
                      DryingStateMachine& stateMachine,
-                     CalibrationService& calibration, const AppConfig& config)
+                     CalibrationService& calibration, NetworkService& network,
+                     const AppConfig& config)
     : display_(display),
       input_(input),
       stateMachine_(stateMachine),
       calibration_(calibration),
+      network_(network),
       config_(config) {}
 
 bool UiService::begin() {
   return input_.begin() && display_.begin();
+}
+
+void UiService::showWifiSetup() {
+  enterScreen(UiScreen::WifiSetup);
 }
 
 void UiService::setToast(const char* text) {
@@ -118,6 +124,9 @@ void UiService::handleRotation(int32_t detents) {
     case UiScreen::DriftConfirm:
       moveCursor(2, detents);
       break;
+    case UiScreen::WifiSetup:
+      moveCursor(2, detents);
+      break;
   }
 }
 
@@ -152,6 +161,8 @@ void UiService::handleClick(DeviceState& state, uint32_t now) {
         enterScreen(UiScreen::ContinuousSetup);
       } else if (ui_.cursor == presetCount + 2) {
         enterScreen(UiScreen::CalibrationMenu);
+      } else if (ui_.cursor == presetCount + 3) {
+        enterScreen(UiScreen::WifiSetup);
       } else {
         ui_.screen = UiScreen::Dashboard;
       }
@@ -223,6 +234,17 @@ void UiService::handleClick(DeviceState& state, uint32_t now) {
         }
       } else {
         backToCalibrationMenu(3);  // back to the DRIFT row
+      }
+      break;
+    case UiScreen::WifiSetup:
+      if (ui_.cursor == 0) {
+        if (state.apActive) {
+          network_.stopSetupAp(state);
+        } else {
+          network_.requestSetupAp(state, now);
+        }
+      } else {
+        backToMainMenu(3);  // back to the WIFI row
       }
       break;
   }

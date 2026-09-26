@@ -16,7 +16,7 @@ const char kDegC[] = "\xB0" "C";
 
 constexpr uint8_t kMenuTop = 13;
 constexpr uint8_t kMenuRowHeight = 13;
-// Presets (6) + MANUAL + CONTINUOUS + CALIB + BACK.
+// Presets (6) + MANUAL + CONTINUOUS + CALIB + WIFI + BACK.
 constexpr uint8_t kMainMenuCapacity = 12;
 constexpr uint8_t kLineCapacity = 20;
 
@@ -189,6 +189,9 @@ void Sh1106Display::render(const DeviceState& state, const UiState& ui) {
       case UiScreen::DriftConfirm:
         renderDriftConfirm(ui);
         break;
+      case UiScreen::WifiSetup:
+        renderWifiSetup(state, ui);
+        break;
       default:
         renderIdle(state);
         break;
@@ -329,7 +332,7 @@ void Sh1106Display::renderMainMenu(const UiState& ui) {
   char buffers[kMainMenuCapacity][kLineCapacity];
   const char* lines[kMainMenuCapacity];
   uint8_t total = 0;
-  for (size_t i = 0; i < presetCount && total < kMainMenuCapacity - 4; ++i) {
+  for (size_t i = 0; i < presetCount && total < kMainMenuCapacity - 5; ++i) {
     char shortName[8];
     shortPresetName(presets[i].name, shortName, sizeof(shortName));
     std::snprintf(buffers[total], kLineCapacity, " %-5s %2.0fC %lu-%luH",
@@ -346,6 +349,9 @@ void Sh1106Display::renderMainMenu(const UiState& ui) {
   lines[total] = buffers[total];
   ++total;
   std::snprintf(buffers[total], kLineCapacity, " CALIB");
+  lines[total] = buffers[total];
+  ++total;
+  std::snprintf(buffers[total], kLineCapacity, " WIFI SETUP");
   lines[total] = buffers[total];
   ++total;
   std::snprintf(buffers[total], kLineCapacity, " BACK");
@@ -437,6 +443,42 @@ void Sh1106Display::renderDriftConfirm(const UiState& ui) {
   display_.drawStr(0, 46, "NEEDS KNOWN MASS ON SCALE");
   display_.drawStr(0, 55, "HEATS + COOLS: TAKES HOURS");
   display_.drawStr(0, 64, "HOLD CANCELS");
+}
+
+void Sh1106Display::renderWifiSetup(const DeviceState& state,
+                                    const UiState& ui) {
+  char buffers[2][kLineCapacity];
+  const char* lines[2];
+  std::snprintf(buffers[0], kLineCapacity, " %s",
+                state.apActive ? "Stop" : "Start");
+  std::snprintf(buffers[1], kLineCapacity, " Back");
+  lines[0] = buffers[0];
+  lines[1] = buffers[1];
+  char right[12];
+  if (state.apActive) {
+    const uint16_t minutes = state.apRemainingSeconds / 60;
+    const uint16_t seconds = state.apRemainingSeconds % 60;
+    std::snprintf(right, sizeof(right), "%u:%02u",
+                  static_cast<unsigned>(minutes),
+                  static_cast<unsigned>(seconds));
+    drawMenu("WI-FI SETUP", lines, 2, ui, 255, right);
+    // The footer needs a wider buffer than a menu row: "SSID " plus the
+    // 16-character network name does not fit kLineCapacity.
+    char footer[32];
+    display_.setFont(u8g2_font_5x7_tf);
+    std::snprintf(footer, sizeof(footer), "SSID %s", state.apSsid);
+    display_.drawStr(0, 46, footer);
+    std::snprintf(footer, sizeof(footer), "PASS %s", state.apPassword);
+    display_.drawStr(0, 55, footer);
+    std::snprintf(footer, sizeof(footer), "WEB  %s", state.apAddress);
+    display_.drawStr(0, 64, footer);
+  } else {
+    drawMenu("WI-FI SETUP", lines, 2, ui, 255);
+    display_.setFont(u8g2_font_5x7_tf);
+    display_.drawStr(0, 46, "WPA2 HOTSPOT 10 MIN");
+    display_.drawStr(0, 55, "PASSWORD ON SCREEN");
+    display_.drawStr(0, 64, "WEB PANEL 192.168.4.1");
+  }
 }
 
 void Sh1106Display::renderCalProgress(const DeviceState& state) {

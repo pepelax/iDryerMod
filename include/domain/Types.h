@@ -33,7 +33,8 @@ enum class UiScreen : uint8_t {
   ContinuousSetup,
   CalibrationMenu,
   ScaleSetup,
-  DriftConfirm
+  DriftConfirm,
+  WifiSetup
 };
 
 // Temperature compensation band count (see defaults::kWeightCalBandWidthC).
@@ -189,6 +190,13 @@ struct DeviceState {
   uint32_t remainingSeconds = 0;
   bool wifiConnected = false;
   bool apActive = false;
+  // Setup hotspot raised manually from the menu (WPA2-protected): network
+  // name, per-boot random password, softAP address and the remaining window
+  // in seconds. Empty when the hotspot is down.
+  char apSsid[24] = "";
+  char apPassword[13] = "";
+  char apAddress[16] = "";
+  uint16_t apRemainingSeconds = 0;
   // Wall clock from NTP: epochSeconds (Unix) is valid only while timeSynced.
   bool timeSynced = false;
   uint32_t epochSeconds = 0;
